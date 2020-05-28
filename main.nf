@@ -1,3 +1,4 @@
+#!/usr/bin/env nextflow
 /*
  * Copyright (c) 2020, Oklahoma Medical Research Foundation (OMRF).
  *
@@ -17,95 +18,220 @@
 
 // File locations and program parameters
 
-log.info """\
-Isoseq3-NF Pipeline
-===================
-params.base             = "/s/guth-aci/isoseq"
-params.reference        = "/Volumes/guth_aci_informatics/references/genomic/homo_sapiens/indices/gmap/gencode_v32/homo_sapiens/"
-params.barcodes         = "${params.base}/barcode_oligos.csv"
-"""
 
 Channel
-    .fromFile( params.ccs , checkExists:true)
-    .into{raw_subreads}
+    .from( "$params.raw_dir/*.ccs.subreads.bam" , checkIfExists:true, type: 'glob' )
+    .set{raw_subreads}
 
-process ccs_calling{
+Channel
+    .fromPath(params.barcode)
+    .splitCsv(header:false)
+    .map{ row -> row[0].split("-")[0] }
+    .unique()
+    .set{sample_channel}
+
+
+process ccs_calling {
     tag "CCS calling"
-    publishDir "${params.base}/02_ccs", mode: "copy", pattern: "*.ccs.bam", overwrite: true
+    publishDir '${params.css_dir}', mode: 'copy', pattern: '*.ccs.bam', overwrite: true
+    publishDir '${params.css_dir}', mode: 'copy', pattern: "*.log", overwrite: true
 
     input:
-    set file(subreads) from raw_subreads
+        file subreads from raw_subreads
 
     output:
-    file "*.ccs.bam" into ccs_channel
+        file "*.ccs.bam" into ccs_channel
+        file "css.log" into css_log
 
     script:
-    """
-    ccs --min-rq 0.9 --log-level DEBUG --log-file ccs.log --num-threads ${task.cpus} ${subreads} ${runid}.ccs.bam
-    """
-
+        """
+        ccs \
+            --min-rq 0.9 \
+            --log-level DEBUG \
+            --log-file ccs.log \
+            --num-threads ${task.cpus} \
+            ${subreads} \
+            ${params.runid}.ccs.bam
+        """
 
 }
 
-process demultiplex{
+process demultiplex {
+    tag "Demultiplexing"
+    publishDir '${params.demux_dir}', mode: 'copy', pattern: '*.bam', overwrite: true
+    publishDir '${params.demux_dir}', mode: 'copy', pattern: '*.log', overwrite: true
+
+    input:
+        called_ccs from ccs_channel
+    
+    output:
+        file "*.bam" into demuxed_channel
+        file "*.log" into demux_log
+
+    script:
+        """
+        lima \
+            --isoseq \
+            --dump-clips \
+            --peek-guess \
+            --num-threads ${task.cpus} \
+            --log-level INFO \
+            --log-file lima.demux.log \
+            ${called_ccs} \
+            barcode.primers.fasta \
+            ${demux_dir}/demuxed.bam
+        """
+}
+
+process refine {
+    tag "Refining $sample"
+    publishDir '${params.refine_dir}', mode: 'copy', pattern: '*.flnc.bam', overwrite: true
+
+    input:
+        val sample from sample_channel
+        demuxed_files from demuxed_channel
+    
+    output:
 
     script:
     """
-    lima --isoseq --dump-clips --peek-guess --num-threads 36 --log-level INFO --log-file lima.demux.log $PROJECT_FOLDER/02_CSS/{runid}.ccs.bam barcode.primers.fasta $PROJECT_FOLDER/03_demultiplexed/demuxed.bam
+    isoseq3 \
+        refine \
+        --num-threads ${tasks.cpus} \
+        --log-file ${sample}.log \
+        --log-level INFO \
+        --verbose \
+        ${demuxed_dir}/demuxed.${sample}.bam \
+        primers.fasta \
+        ${refined_dir}/refined.${sample}.flnc.bam
     """
 }
 
-process refine{
+process cluster-polish {
+    tag "Polishing $sample"
+    publishDir '${params.polished_dir}', mode: 'copy', pattern: '*.bam', overwrite: true
+
+    input:
+        val sample from sample_channel
+    
+    output:
 
     script:
     """
-    isoseq3 refine --num-threads 16 --log-file ${bc_array[$i]}.log --log-level INFO --verbose $PROJECT_FOLDER/03_demultiplexed/demuxed.${bc_array[$i]}.bam primers.fasta $PROJECT_FOLDER/04_refined/refined.${bc_array[$i]}.flnc.bam
+    isoseq3 \
+        cluster \
+        --use-qvs \
+        --num-threads ${task.cpu} \
+        --log-file ${sample}.log \
+        --log-level INFO \
+        --verbose \
+        ${refined_dir}/refined.${sample}.flnc.bam \
+        ${polished_dir}/polished.${sample}.bam
     """
 }
 
-process cluster-polish{
+process mapping {
+    tag "Mapping $sample"
+    publishDir '${params.mapped_dir}', mode: 'copy', pattern: '*.sam', overwrite: true
+    publishDir '${params.mapped_dir}', mode: 'copy', pattern: '*.log', overwrite: true
+
+    input:
+        val sample from sample_channel
+
+    output:
 
     script:
     """
-    isoseq3 cluster --use-qvs --num-threads 16 --log-file ${bc_array[$i]}.log --log-level INFO --verbose $PROJECT_FOLDER/04_refined/refined.${bc_array[$i]}.flnc.bam $PROJECT_FOLDER/05_polished/polished.${bc_array[$i]}.bam
+    gmap \
+        -D ${params.reference}
+        -d ${species} \
+        -f samse \
+        -n 0 \
+        -t ${task.cpus} \
+        --cross-species \
+        --max-intronlength-ends 200000 \
+        -z sense_force \
+        ${polished_dir}/polished.${sample}.hq.fasta \
+        > ${mapped_dir}/${sample}_hq_isoforms.mapped.sam \
+        2> ${mapped_dir}/${sample}_hq_isoforms.log
     """
 }
 
-process mapping{
+process sort {
+    tag "Sorting"
+    publishDir '${params.sorted_dir}', mode: 'copy', pattern: '*.bam', overwrite: true
 
+    input:
+        val sample from sample_channel
+
+    output:
+    
     script:
     """
-    gmap -D /Volumes/guth_aci_informatics/references/genomic/homo_sapiens/indices/gmap/gencode_v32/homo_sapiens/ -d homo_sapiens -f samse -n 0 -t 16 --cross-species --max-intronlength-ends 200000 -z sense_force $PROJECT_FOLDER/05_polished/polished.${bc_array[$i]}.hq.fasta > $PROJECT_FOLDER/06_mapped/${bc_array[$i]}_hq_isoforms.fasta.sam 2> $PROJECT_FOLDER/06_mapped/${bc_array[$i]}_hq_isoforms.log
+    samtools \
+        sort \
+        -O BAM \
+        ${mapped_dir}/${sample}_hq_isoforms.mapped.sam \
+        -o ${sorted_dir}/${sample}_hq_isoforms.mapped.sorted.bam 
     """
 }
 
-process sort{
+process transcompress {
+    tag "Transcompressing $sample"
+    publishDir '${params.transcompressed_dir}', mode: 'copy', pattern: '*.fastq.gz', overwrite: true
+
+    input:
+        val sample from sample_channel
+
+    output:
 
     script:
     """
-    samtools sort -O BAM $PROJECT_FOLDER/06_mapped/${bc_array[$i]}_hq_isoforms.mapped.bam -o $PROJECT_FOLDER/07_sorted/${bc_array[$i]}_hq_isoforms.mapped.sorted.bam
+    bgzip \
+        --decompress ${polished_dir}/${sample}.fasta.gz && \
+    bgzip \
+        --index ${polished_dir}/${sample}.fasta
     """
 }
 
-process transcompress{
+process filter {
+    tag "Filtering $sample"
+    publishDir '${params.filtered_dir}', mode: 'copy', pattern: '*.bam', overwrite: true
+
+    input:
+        val sample from sample_channel
+
+    output:
 
     script:
     """
-    bgzip --decompress $PROJECT_FOLDER/05_polished/${bc_array[$i]}.fastq.gz && bgzip --index $PROJECT_FOLDER/05_polished/${bc_array[$i]}.fastq &&
+    filter_sam \
+        --fastq ${polished_dir}/${sample}.fastq.gz \
+        --sam ${sorted_dir}/${sample}_hq_isoforms.mapped.sorted.bam \
+        --prefix ${filtered_dir}/${sample}_
     """
 }
-process filter{
 
+process collapse {
+    tag "Collapsing"
+    publishDir '${params.collapsed_dir}', mode: 'copy', pattern: '*.ccs.bam', overwrite: true
+
+    input:
+        val sample from sample_channel
+
+    output:
+    
     script:
     """
-    filter_sam --fastq $PROJECT_FOLDER/05_polished/${bc_array[$i]}.fastq.gz --sam $PROJECT_FOLDER/06_sorted/${bc_array[$i]}_hq_isoforms.mapped.sorted.bam --prefix $PROJECT_FOLDER/07_filtered/${bc_array[$i]}_
+    collapse_isoforms_by_sam.py \
+        --input ${polished_dir}${sample}.fastq \
+        --sam ${sorted_dir}/${sample}_filtered.sam \
+        --dun-merge-5-shorter \
+        --prefix ${collapsed_dir}/${sample}
     """
 }
 
-process collapse{
 
-    script:
-    """
-    collapse_isoforms_by_sam.py --input $PROJECT_FOLDER/06_polished/${bc_array[$i]}.fastq --sam $PROJECT_FOLDER/07_sorted/${bc_array[$i]}_filtered.sam --dun-merge-5-shorter --prefix $PROJECT_FOLDER/08_collapsed/${bc_array[$i]}
-    """
+workflow.onComplete {
+	log.info ( workflow.success ? "\nDone!\n" : "Oops .. something went wrong" )
 }
