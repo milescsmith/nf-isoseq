@@ -26,11 +26,11 @@ Channel
 
 Channel
     .value()
-    .fromPath(params.barcodes)
-    .splitCsv(header:false)
+    .fromPath( params.barcodes )
+    .splitCsv( header:false )
     .map{ row -> row[0].split("-")[0] }
     .unique()
-    .set{sample_name_ch}
+    .set{ sample_name_ch }
 
 extract_bc = { item -> 
     item =~ /bc(\d+)\-\[FR]/

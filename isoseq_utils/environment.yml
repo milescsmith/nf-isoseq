@@ -1,0 +1,10 @@
+name: nf-isoseq
+channels:
+  - bioconda
+  - defaults
+dependencies:
+  - bioconda::pbccs==4.2.0
+  - bioconda::lima==1.11.0
+  - bionconda::isoseq3==3.3.0
+  - bioconda::gmap==2020.04.08
+  - bionconda::samtools==1.10

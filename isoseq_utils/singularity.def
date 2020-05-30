@@ -1,0 +1,22 @@
+Bootstrap: docker
+From: ubuntu:bionic
+
+%labels
+    Author Miles Smith <miles-smith@omrf.org>
+    Version v0.1.0
+
+%environment
+    export DEBIAN_FRONTEND=noninteractive
+    export PATH /home/rstudio/conda/bin:$PATH
+
+%files
+    environment.yml /opt/environment.yml
+
+%post
+    wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /opt/miniconda.sh
+    /bin/bash /opt/miniconda.sh -b -p /home/root/conda
+    rm /home/root/miniconda.sh
+    /home/root/conda/bin/conda init
+    conda update -n base -c defaults conda -y
+    conda env create --file /opt/environment.yml
+    conda clean --all -y
