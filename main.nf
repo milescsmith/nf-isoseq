@@ -48,7 +48,7 @@ process ccs_calling {
 
     output:
         file "*.ccs.bam" into ccs_ch
-        file "css.log" into css_log
+        file "ccs.log" into css_log
 
     script:
         """
@@ -263,6 +263,7 @@ process transcompress {
 process filter {
     tag "Filtering"
     publishDir '${params.filtered-}', mode: 'copy', pattern: '*.bam', overwrite: true
+    
     container "registry.gitlab.com/milothepsychic/filter_sam"
 
     input:
