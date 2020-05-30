@@ -63,7 +63,7 @@ process ccs_calling {
 
 }
 
-process demultiplex {
+process demux {
     conda "bioconda::lima"
 
     tag "Demultiplexing samples"
