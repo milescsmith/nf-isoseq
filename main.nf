@@ -37,7 +37,7 @@ extract_bc = { item ->
 }
 
 process ccs_calling {
-    conda "bioconda::pbccs"
+    // conda "bioconda::pbccs"
 
     tag "CCS calling"
     publishDir '${params.css-}', mode: 'copy', pattern: '*.ccs.bam', overwrite: true
@@ -64,7 +64,10 @@ process ccs_calling {
 }
 
 process demux {
-    conda "bioconda::lima"
+    // conda "bioconda::lima"
+
+    cpus 16
+    clusterOptions "--mem=256 --parition=highmem -o ~/demux.log"
 
     tag "Demultiplexing samples"
     publishDir '${params.demux-}', mode: 'copy', pattern: '*.bam', overwrite: true
@@ -96,7 +99,7 @@ process demux {
 }
 
 process refine {
-    conda "bioconda::isoseq3"
+    // conda "bioconda::isoseq3"
 
     tag "Refining"
     publishDir '${params.refine-}', mode: 'copy', pattern: '*.flnc.bam', overwrite: true
@@ -125,7 +128,7 @@ process refine {
 }
 
 process cluster {
-    conda "bioconda::isoseq3"
+    // conda "bioconda::isoseq3"
 
     tag "Clustering"
     publishDir '${params.unpolished-}', mode: 'copy', pattern: '*.bam', overwrite: true
@@ -154,7 +157,7 @@ process cluster {
 }
 
 process polish {
-    conda "bioconda::isoseq3"
+    // conda "bioconda::isoseq3"
 
     tag "Polishing"
     publishDir '${params.polished-}', mode: 'copy', pattern: '*.bam', overwrite: true
@@ -184,7 +187,7 @@ process polish {
 }
 
 process mapping {
-    conda "bioconda::gmap==2020.04.08"
+    // conda "bioconda::gmap==2020.04.08"
 
     tag "Mapping"
     publishDir '${params.mapped-}', mode: 'copy', pattern: '*.sam', overwrite: true
@@ -216,7 +219,7 @@ process mapping {
 }
 
 process sort {
-    conda "bioconda::samtools==1.10"
+    // conda "bioconda::samtools==1.10"
 
     tag "Sorting"
     publishDir '${params.sorted-}', mode: 'copy', pattern: '*.bam', overwrite: true
@@ -239,7 +242,7 @@ process sort {
 }
 
 process transcompress {
-    conda "bioconda::samtools==1.10"
+    // conda "bioconda::samtools==1.10"
 
     tag "Transcompressing"
     publishDir '${params.transcompressed-}', mode: 'copy', pattern: '*.fasta.gz', overwrite: true

@@ -11,8 +11,5 @@ RUN /bin/bash /opt/miniconda.sh -b -p /home/root/conda && \
     rm /opt/miniconda.sh && \
     /home/root/conda/bin/conda init && \
     conda update -n base -c defaults conda -y && \
-    conda env create --file /opt/environment.yml && \
+    conda install -n base -c bioconda gmap pbccs==4.2.0 lima==1.11.0 isoseq3==3.3.0 gmap samtools && \
     conda clean --all -y
-
-
-CMD [ 'conda' ]
