@@ -22,7 +22,7 @@ params.input = "${params.raw}/*.subreads.bam"
 
 Channel
     .fromPath( params.input , checkIfExists: true )
-    .set{ raw_subreads }
+    .into{ raw_subreads_1; raw_subreads_2 }
 
 Channel
     .value()
@@ -36,18 +36,42 @@ extract_bc = { item ->
     item =~ /bc(\d+)\-\[FR]/
 }
 
+process ccs_indexing {
+    conda "bioconda::pbbam"
+
+    tag "CCS indexing"
+    publishDir '${params.raw}', mode: 'copy', pattern : '*.bam.pbi', overwrite: false
+    
+    input:
+        file(subreads) from raw_subreads_1
+
+    output:
+        file "*.bam.pbi" into raw_index_ch
+
+    script:
+        """
+        pbindex ${subreads}
+        """
+}
+
 process ccs_calling {
+    // Need to rewrite so as to chunk and parallelize https://github.com/PacificBiosciences/ccs#how-can-I-parallelize-on-multiple-servers
+
+    // Okay, now make chunking optional
     conda "bioconda::pbccs"
 
     tag "CCS calling"
-    publishDir '${params.css-}', mode: 'copy', pattern: '*.ccs.bam', overwrite: true
-    publishDir '${params.css-}', mode: 'copy', pattern: "*.log", overwrite: true
+    publishDir '${params.ccs}', mode: 'copy', pattern: '*.ccs.${chunk}.bam', overwrite: true
+    publishDir '${params.ccs}', mode: 'copy', pattern: "*.log", overwrite: true
 
     input:
-        file(subreads) from raw_subreads
+        file(subreads) from raw_subreads_2
+        file(index) from raw_index_ch
+        each chunk from 1..params.chunks
+        val chunks from params.chunks
 
     output:
-        file "*.ccs.bam" into ccs_ch
+        file "*.ccs.${chunk}.bam" into ccs_chunks_ch
         file "ccs.log" into css_log
 
     script:
@@ -57,21 +81,40 @@ process ccs_calling {
             --log-level DEBUG \
             --log-file ccs.log \
             --num-threads ${task.cpus} \
+            --chunk ${chunk}/${chunks} \
             ${subreads} \
             ${params.runid}.ccs.bam
         """
 
 }
 
+process ccs_chunk_merging {
+    conda "bioconda::pbccs"
+
+    tag "CCS chunk merging"
+    publishDir '${params.ccs}', mode: 'copy', pattern: "*.ccs.bam", overwrite: true
+    publishDir '${params.ccs}', mode: 'copy', pattern: "*.pbi", overwrite: true
+
+    input:
+        file bam_chunks from ccs_chunks_ch.collect()
+
+    output:
+        file "*.ccs.bam" into ccs_ch
+        file "*.pbi" into index_ch
+
+    script:
+        """
+        pbmerge -o ${params.runid}.ccs.bam ${bam_chunks}
+        pbindex ${params.runid}.ccs.bam
+        """
+}
+
 process demux {
     conda "bioconda::lima"
 
-    cpus 16
-    clusterOptions "--mem=256 --parition=highmem -o ~/demux.log"
-
     tag "Demultiplexing samples"
-    publishDir '${params.demux-}', mode: 'copy', pattern: '*.bam', overwrite: true
-    publishDir '${params.demux-}', mode: 'copy', pattern: '*.log', overwrite: true
+    publishDir '${params.demux}', mode: 'copy', pattern: '*.bam', overwrite: true
+    publishDir '${params.demux}', mode: 'copy', pattern: '*.log', overwrite: true
 
     input:
         // val sample from sample_name_ch
@@ -102,8 +145,8 @@ process refine {
     conda "bioconda::isoseq3"
 
     tag "Refining"
-    publishDir '${params.refine-}', mode: 'copy', pattern: '*.flnc.bam', overwrite: true
-    publishDir '${params.refine-}', mode: 'copy', pattern: '*.log', overwrite: true
+    publishDir '${params.refine}', mode: 'copy', pattern: '*.flnc.bam', overwrite: true
+    publishDir '${params.refine}', mode: 'copy', pattern: '*.log', overwrite: true
 
     input:
         // val sample from sample_name_ch
@@ -131,8 +174,8 @@ process cluster {
     conda "bioconda::isoseq3"
 
     tag "Clustering"
-    publishDir '${params.unpolished-}', mode: 'copy', pattern: '*.bam', overwrite: true
-    publishDir '${params.unpolished-}', mode: 'copy', pattern: '*.log', overwrite: true
+    publishDir '${params.unpolished}', mode: 'copy', pattern: '*.bam', overwrite: true
+    publishDir '${params.unpolished}', mode: 'copy', pattern: '*.log', overwrite: true
 
     input:
         // val sample from sample_name_ch
@@ -160,8 +203,8 @@ process polish {
     conda "bioconda::isoseq3"
 
     tag "Polishing"
-    publishDir '${params.polished-}', mode: 'copy', pattern: '*.bam', overwrite: true
-    publishDir '${params.polished-}', mode: 'copy', pattern: '*.log', overwrite: true
+    publishDir '${params.polished}', mode: 'copy', pattern: '*.bam', overwrite: true
+    publishDir '${params.polished}', mode: 'copy', pattern: '*.log', overwrite: true
 
     input:
         // val sample from sample_name_ch
@@ -190,8 +233,8 @@ process mapping {
     conda "bioconda::gmap==2020.04.08"
 
     tag "Mapping"
-    publishDir '${params.mapped-}', mode: 'copy', pattern: '*.sam', overwrite: true
-    publishDir '${params.mapped-}', mode: 'copy', pattern: '*.log', overwrite: true
+    publishDir '${params.mapped}', mode: 'copy', pattern: '*.sam', overwrite: true
+    publishDir '${params.mapped}', mode: 'copy', pattern: '*.log', overwrite: true
 
     input:
         // val sample from sample_name_ch
@@ -222,7 +265,7 @@ process sort {
     conda "bioconda::samtools==1.10"
 
     tag "Sorting"
-    publishDir '${params.sorted-}', mode: 'copy', pattern: '*.bam', overwrite: true
+    publishDir '${params.sorted}', mode: 'copy', pattern: '*.bam', overwrite: true
 
     input:
         // val sample from sample_name_ch
@@ -245,7 +288,7 @@ process transcompress {
     conda "bioconda::samtools==1.10"
 
     tag "Transcompressing"
-    publishDir '${params.transcompressed-}', mode: 'copy', pattern: '*.fasta.gz', overwrite: true
+    publishDir '${params.transcompressed}', mode: 'copy', pattern: '*.fasta.gz', overwrite: true
 
     input:
         // val sample from sample_name_ch
@@ -265,7 +308,7 @@ process transcompress {
 
 process filter {
     tag "Filtering"
-    publishDir '${params.filtered-}', mode: 'copy', pattern: '*.bam', overwrite: true
+    publishDir '${params.filtered}', mode: 'copy', pattern: '*.bam', overwrite: true
     
     container "registry.gitlab.com/milothepsychic/filter_sam"
 
@@ -288,7 +331,7 @@ process filter {
 
 process collapse {
     tag "Collapsing"
-    publishDir '${params.collapsed-}', mode: 'copy', pattern: '*.gff', overwrite: true
+    publishDir '${params.collapsed}', mode: 'copy', pattern: '*.gff', overwrite: true
 
     container "milescsmith/cdna_cupcake"
 
