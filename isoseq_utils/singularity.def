@@ -7,16 +7,18 @@ From: ubuntu:bionic
 
 %environment
     export DEBIAN_FRONTEND=noninteractive
-    export PATH /home/rstudio/conda/bin:$PATH
+    export PATH /home/root/conda/bin:$PATH
 
 %files
     environment.yml /opt/environment.yml
 
 %post
+    apt update 
+    apt install -y wget
     wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /opt/miniconda.sh
-    /bin/bash /opt/miniconda.sh -b -p /home/root/conda
-    rm /home/root/miniconda.sh
-    /home/root/conda/bin/conda init
+    /bin/bash /opt/miniconda.sh -b -p $HOME/conda
+    rm /opt/miniconda.sh
+    $HOME/conda/bin/conda init
     conda update -n base -c defaults conda -y
     conda env create --file /opt/environment.yml
     conda clean --all -y
