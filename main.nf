@@ -44,11 +44,11 @@ process ccs_calling {
     publishDir '${params.css-}', mode: 'copy', pattern: "*.log", overwrite: true
 
     input:
-        file subreads from raw_subreads
+        file(subreads) from raw_subreads
 
     output:
         file "*.ccs.bam" into ccs_ch
-        file "css.log" into css_log
+        file "ccs.log" into css_log
 
     script:
         """
@@ -63,8 +63,11 @@ process ccs_calling {
 
 }
 
-process demultiplex {
+process demux {
     conda "bioconda::lima"
+
+    cpus 16
+    clusterOptions "--mem=256 --parition=highmem -o ~/demux.log"
 
     tag "Demultiplexing samples"
     publishDir '${params.demux-}', mode: 'copy', pattern: '*.bam', overwrite: true
@@ -263,6 +266,7 @@ process transcompress {
 process filter {
     tag "Filtering"
     publishDir '${params.filtered-}', mode: 'copy', pattern: '*.bam', overwrite: true
+    
     container "registry.gitlab.com/milothepsychic/filter_sam"
 
     input:
