@@ -9,3 +9,4 @@ dependencies:
   - bioconda::isoseq3==3.3.0
   - bioconda::gmap
   - bioconda::samtools
+  - conda-forge::graphviz==2.42.3

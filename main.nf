@@ -32,15 +32,20 @@ Channel
     .unique()
     .set{ sample_name_ch }
 
+Channel
+    .fromPath( params.barcodes )
+    .into{ barcodes_ch; refine_barcodes_ch }
+
 extract_bc = { item -> 
     item =~ /bc(\d+)\-\[FR]/
 }
 
+// change most of these "bioconda::[package]" to pb.yml
 process ccs_indexing {
     conda "bioconda::pbbam"
 
     tag "CCS indexing"
-    publishDir '${params.raw}', mode: 'copy', pattern : '*.bam.pbi', overwrite: false
+    // publishDir "${params.raw}", mode: "copy", pattern : "*.bam.pbi", overwrite: false
     
     input:
         file(subreads) from raw_subreads_1
@@ -59,10 +64,13 @@ process ccs_calling {
 
     // Okay, now make chunking optional
     conda "bioconda::pbccs"
+    
+    cpus 8
+    maxForks 8
 
     tag "CCS calling"
-    publishDir '${params.ccs}', mode: 'copy', pattern: '*.ccs.${chunk}.bam', overwrite: true
-    publishDir '${params.ccs}', mode: 'copy', pattern: "*.log", overwrite: true
+    // publishDir "${params.ccs}", mode: "copy", pattern: "*.ccs.${chunk}.bam", overwrite: true
+    // publishDir "${params.logs}/ccs", mode: "copy", pattern: "*.log", overwrite: true
 
     input:
         file(subreads) from raw_subreads_2
@@ -73,7 +81,7 @@ process ccs_calling {
     output:
         file "*.ccs.${chunk}.bam" into ccs_chunks_ch
         file "ccs.log" into css_log
-
+// need to change ccs.log to ${chunk}.ccs.log
     script:
         """
         ccs \
@@ -83,24 +91,24 @@ process ccs_calling {
             --num-threads ${task.cpus} \
             --chunk ${chunk}/${chunks} \
             ${subreads} \
-            ${params.runid}.ccs.bam
+            ${params.runid}.ccs.${chunk}.bam
         """
 
 }
 
 process ccs_chunk_merging {
-    conda "bioconda::pbccs"
+    conda "bioconda::pbbam"
 
     tag "CCS chunk merging"
-    publishDir '${params.ccs}', mode: 'copy', pattern: "*.ccs.bam", overwrite: true
-    publishDir '${params.ccs}', mode: 'copy', pattern: "*.pbi", overwrite: true
+    // publishDir "${params.ccs}", mode: "copy", pattern: "*.ccs.bam", overwrite: true
+    // publishDir "${params.ccs}", mode: "copy", pattern: "*.pbi", overwrite: true
 
     input:
         file bam_chunks from ccs_chunks_ch.collect()
 
     output:
         file "*.ccs.bam" into ccs_ch
-        file "*.pbi" into index_ch
+        file "*.pbi" into index_ch //delete?
 
     script:
         """
@@ -113,22 +121,21 @@ process demux {
     conda "bioconda::lima"
 
     tag "Demultiplexing samples"
-    publishDir '${params.demux}', mode: 'copy', pattern: '*.bam', overwrite: true
-    publishDir '${params.demux}', mode: 'copy', pattern: '*.log', overwrite: true
-
+    //publishDir "${params.demux}", mode: "copy", pattern: "*.bam", overwrite: true
+    publishDir "${params.logs}/demux", mode: "copy", pattern: "*.log", overwrite: true
+    //publishDir "${params.logs}/demux", mode: "copy", pattern: "*.log", overwrite: true
     input:
         // val sample from sample_name_ch
         file called_ccs from ccs_ch
+        file(barcodes) from barcodes_ch
     
     output:
-        file "*.bam" into demuxed_ch
-        file "*.log" into demux_log
+        file "demuxed.*.bam" into demuxed_ch
 
     script:
         """
         lima \
             --isoseq \
-            --ccs \
             --dump-clips \
             --peek-guess \
             --num-threads ${task.cpus} \
@@ -136,7 +143,7 @@ process demux {
             --log-file lima.demux.log \
             --split-bam \
             ${called_ccs} \
-            ${params.barcodes} \
+            ${barcodes} \
             demuxed.bam
         """
 }
@@ -145,28 +152,27 @@ process refine {
     conda "bioconda::isoseq3"
 
     tag "Refining"
-    publishDir '${params.refine}', mode: 'copy', pattern: '*.flnc.bam', overwrite: true
-    publishDir '${params.refine}', mode: 'copy', pattern: '*.log', overwrite: true
+    //publishDir "${params.refine}", mode: "copy", pattern: "*.flnc.bam", overwrite: true
+    publishDir "${params.logs}/refine", mode: "copy", pattern: "*.log", overwrite: true
 
     input:
-        // val sample from sample_name_ch
-        file demuxed_file from demuxed_ch
+        each file(demuxed) from demuxed_ch.flatten()
+        file(barcodes) from refine_barcodes_ch
     
     output:
-        file "${refined_bam}" into refined_ch
-        file "${refined_log}" into refined_log_ch
+        file "*.flnc.bam" into refined_ch
 
     script:
     """
     isoseq3 \
         refine \
-        --num-threads ${tasks.cpus} \
-        --log-file ${refined_log} \
+        --num-threads ${task.cpus} \
+        --log-file ${demuxed.baseName}.log \
         --log-level INFO \
         --verbose \
-        ${demuxed_file} \
-        primers.fasta \
-        ${refined_bam}
+        ${demuxed} \
+        ${barcodes} \
+        ${demuxed.baseName}.flnc.bam
     """
 }
 
@@ -174,90 +180,110 @@ process cluster {
     conda "bioconda::isoseq3"
 
     tag "Clustering"
-    publishDir '${params.unpolished}', mode: 'copy', pattern: '*.bam', overwrite: true
-    publishDir '${params.unpolished}', mode: 'copy', pattern: '*.log', overwrite: true
+    //publishDir "${params.unpolished}", mode: "copy", pattern: "*.bam", overwrite: true
+    publishDir "${params.logs}/unpolished", mode: "copy", pattern: "*.log", overwrite: true
 
     input:
         // val sample from sample_name_ch
         file refined_bam from refined_ch
     
     output:
-        file "${unpolished_bam}" into unpolished_bam_ch
-        file "${unpolished_log}" into unpolished_log_ch
+        file "*.unpolished.bam" into unpolished_bam_ch
+        file "*.hq.fasta.gz" into gzipped_hq_ch
+        file "*.lq.fasta.gz" into unpolished_lq_ch
+
 
     script:
     """
     isoseq3 \
         cluster \
         --use-qvs \
-        --num-threads ${task.cpu} \
-        --log-file ${unpolished_log} \
+        --num-threads ${task.cpus} \
+        --log-file ${refined_bam.baseName}.log \
         --log-level INFO \
         --verbose \
         ${refined_bam} \
-        ${unpolished_bam}
+        ${refined_bam}.unpolished.bam
     """
 }
 
-process polish {
-    conda "bioconda::isoseq3"
+// Since this takes forever, need to make it optional
+// process polish {
+//     conda "bioconda::isoseq3"
 
-    tag "Polishing"
-    publishDir '${params.polished}', mode: 'copy', pattern: '*.bam', overwrite: true
-    publishDir '${params.polished}', mode: 'copy', pattern: '*.log', overwrite: true
+//     tag "Polishing"
+//     //publishDir "${params.polished}", mode: "copy", pattern: "*.bam", overwrite: true
+//     publishDir "${params.logs}/polished", mode: "copy", pattern: "*.log", overwrite: true
+
+//     input:
+//         // val sample from sample_name_ch
+//         file unpolished_bam from unpolished_bam_ch
+    
+//     output:
+//         file "*.polished.bam" into polished_bam_ch
+//         file "*.hq.fasta.gz" into polished_hq_ch, gzipped_hq_ch
+//         file "*.lq.fasta.gz" into polished_lq_ch
+
+//     script:
+//     """
+//     isoseq3 \
+//         polish \
+//         --num-threads ${task.cpus} \
+//         --log-file ${unpolished_bam.baseName}.log \
+//         --log-level INFO \
+//         --verbose \
+//         ${unpolished_bam} \
+//         ${unpolished_bam.baseName}.polished.bam
+//     """
+// }
+
+process uncompress {
+    conda "bioconda::samtools==1.10"
+
+    tag "Uncompressing"
+    //publishDir "${params.transcompressed}", mode: "copy", pattern: "*.fasta.gz", overwrite: true
 
     input:
         // val sample from sample_name_ch
-        file unpolished_bam from unpolished_bam_ch
-    
+        file gzipped_fasta from gzipped_hq_ch
+
     output:
-        file "${polished_bam}" into polished_bam_ch
-        file "${polished_log}" into polished_log_ch
-        file "*.hq.fasta.gz" into polished_hq_ch, gzipped_hq_ch
-        file "*.lq.fasta.gz" into polished_lq_ch
+        file "*.fasta" into unpolished_hq_fa_ch, unzipped_hq_fa_ch, filter_fa_hq_ch, unpolished_hq_fa_for_cupcake_ch
 
     script:
     """
-    isoseq3 \
-        polish \
-        --num-threads ${task.cpu} \
-        --log-file ${polished_log} \
-        --log-level INFO \
-        --verbose \
-        ${unpolished_bam} \
-        ${polished_bam}
+    bgzip --decompress ${gzipped_fasta}
     """
 }
 
 process mapping {
+    // so I guess gmap 2020.04.08 from bioconda cannot handle compressed fasta?
     conda "bioconda::gmap==2020.04.08"
 
     tag "Mapping"
-    publishDir '${params.mapped}', mode: 'copy', pattern: '*.sam', overwrite: true
-    publishDir '${params.mapped}', mode: 'copy', pattern: '*.log', overwrite: true
+    //publishDir "${params.mapped}", mode: "copy", pattern: "*.sam", overwrite: true
+    publishDir "${params.logs}/mapped", mode: "copy", pattern: "*.log", overwrite: true
 
     input:
-        // val sample from sample_name_ch
-        file polished_hq_fasta from polished_hq_ch
+        file hq_fasta from unpolished_hq_fa_ch
 
     output:
-        file "${mapped_sam}" into mapped_ch
-        file "${mapping_log}" into mapping_log_ch
+        file "*.mapped.sam" into mapped_ch
 
     script:
     """
     gmap \
-        -D ${params.reference}
-        -d ${species} \
+        -D ${params.reference} \
+        -d ${params.species} \
         -f samse \
         -n 0 \
         -t ${task.cpus} \
         --cross-species \
         --max-intronlength-ends 200000 \
         -z sense_force \
-        ${polished_hq_fasta} \
-        > ${mapped_sam} \
-        2> ${mapping_log}
+        ${hq_fasta} \
+        > ${hq_fasta.baseName}.mapped.sam \
+        2> ${hq_fasta.baseName}.mapped.log
     """
 }
 
@@ -265,14 +291,14 @@ process sort {
     conda "bioconda::samtools==1.10"
 
     tag "Sorting"
-    publishDir '${params.sorted}', mode: 'copy', pattern: '*.bam', overwrite: true
+    publishDir "${params.sorted}", mode: "copy", pattern: "*.bam", overwrite: true
 
     input:
         // val sample from sample_name_ch
         file mapped_sam from mapped_ch
 
     output:
-        file "${sorted_bam}" into sorted_ch
+        file "*.sorted.bam" into sorted_ch, sorted_filtering_bam_ch
     
     script:
     """
@@ -280,68 +306,97 @@ process sort {
         sort \
         -O BAM \
         ${mapped_sam} \
-        -o ${sorted_bam}
+        -o ${mapped_sam.baseName}.sorted.bam
     """
 }
 
-process transcompress {
+process index_sorted {
     conda "bioconda::samtools==1.10"
 
-    tag "Transcompressing"
-    publishDir '${params.transcompressed}', mode: 'copy', pattern: '*.fasta.gz', overwrite: true
+    tag "Index sorted"
+
+    input:
+        file sorted_bam from sorted_ch
+    
+    output:
+        file "*.bai" into sorted_index_ch
+
+    script:
+    """
+    samtools \
+        index \
+        -@ ${task.cpus} \
+        ${sorted_bam} \
+        ${sorted_bam}.bai
+    """
+}
+
+process filter {
+    tag "Filtering"
+    //publishDir "${params.filtered}", mode: "copy", pattern: "*.bam", overwrite: true
+    
+    conda "./filter_sam.yml"
 
     input:
         // val sample from sample_name_ch
-        file "${sample}.fasta.gz" from gzipped_hq_ch
+        file hq_fasta from filter_fa_hq_ch
+        file sorted from sorted_filtering_bam_ch
+        file sorted_index from sorted_index_ch
+
+    output:
+        file "${sorted.baseName}_filtered.sam" into filtered_ch
+
+    script:
+    """
+    filter_sam \
+        --fasta ${hq_fasta} \
+        --sam ${sorted} \
+        --prefix ${sorted.baseName}_
+    """
+}
+
+process compress {
+    conda "bioconda::samtools==1.10"
+
+    tag "Compressing"
+    //publishDir "${params.transcompressed}", mode: "copy", pattern: "*.fasta.gz", overwrite: true
+
+    input:
+        // val sample from sample_name_ch
+        file unzipped_fasta from unzipped_hq_fa_ch
 
     output:
         file "*.fasta.gz" into bgzipped_hq_ch, bgzipped_hq_ch_2
 
     script:
     """
-    bgzip \
-        --decompress ${sample}.fasta.gz && \
-    bgzip \
-        --index ${sample}.fasta
-    """
-}
-
-process filter {
-    tag "Filtering"
-    publishDir '${params.filtered}', mode: 'copy', pattern: '*.bam', overwrite: true
-    
-    container "registry.gitlab.com/milothepsychic/filter_sam"
-
-    input:
-        // val sample from sample_name_ch
-        file "${sample}.fasta.gz" from bgzipped_hq_ch
-        file sorted from sorted_ch
-
-    output:
-        file "${sample}_filtered.sam" into filtered_ch
-
-    script:
-    """
-    filter_sam \
-        --fasta ${sample}.fasta.gz \
-        --sam ${sorted} \
-        --prefix ${sample}_
+    bgzip --index ${unzipped_fasta}
     """
 }
 
 process collapse {
     tag "Collapsing"
-    publishDir '${params.collapsed}', mode: 'copy', pattern: '*.gff', overwrite: true
+    publishDir "${params.collapsed}", mode: "copy", pattern: "*.gff", overwrite: true
+    publishDir "${params.collapsed}", mode: "copy", pattern: "*.unfuzzy", overwrite: true
+    publishDir "${params.collapsed}", mode: "copy", pattern: "*.group.txt", overwrite: true
+    publishDir "${params.collapsed}", mode: "copy", pattern: "*.group.txt.unfuzzy", overwrite: true
+    publishDir "${params.collapsed}", mode: "copy", pattern: "*.rep.fa", overwrite: true
+    publishDir "${params.collapsed}", mode: "copy", pattern: "*.ignored_ids.txt", overwrite: true
+    publishDir "${params.collapsed}", mode: "copy", pattern: "*.sam", overwrite: true
+    publishDir "${params.collapsed}", mode: "copy", pattern: "*.fasta", overwrite: true
 
-    container "milescsmith/cdna_cupcake"
+    conda "./cdna_cupcake.yml"
 
     input:
         // val sample from sample_name_ch
         file filtered from filtered_ch
-        file fasta from bgzipped_hq_ch_2
+        file fasta from unpolished_hq_fa_for_cupcake_ch
 
-    output:
-        file "${sample}.gff" into collapsed_ch
+    // Until we have a next step, these just keep the parent process from completing
+    // output:
+    //     file "*.collapsed.gff" into collapsed_gff_ch
+    //     file "*.collapsed.gff.unfuzzy" into collapsed_unfuzzy_gff_ch
+    //     file "*.collapsed.rep.fa" into collapsed_fa_ch
     
     script:
     """
@@ -349,10 +404,13 @@ process collapse {
         --input ${fasta} \
         --sam ${filtered} \
         --dun-merge-5-shorter \
-        --prefix ${sample}
+        --prefix ${fasta.baseName}
     """
 }
 
+workflow.onError {
+    println "Pipeline execution stopped with the following message: ${workflow.errorMessage}"
+}
 
 workflow.onComplete {
 	log.info ( workflow.success ? "\nDone!\n" : "Oops .. something went wrong" )
