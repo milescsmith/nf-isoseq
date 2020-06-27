@@ -393,10 +393,10 @@ process collapse {
         file fasta from unpolished_hq_fa_for_cupcake_ch
 
     // Until we have a next step, these just keep the parent process from completing
-    // output:
-    //     file "*.collapsed.gff" into collapsed_gff_ch
-    //     file "*.collapsed.gff.unfuzzy" into collapsed_unfuzzy_gff_ch
-    //     file "*.collapsed.rep.fa" into collapsed_fa_ch
+    output:
+        file "*.collapsed.gff" into collapsed_gff_ch
+        // file "*.collapsed.gff.unfuzzy" into collapsed_unfuzzy_gff_ch
+        //  file "*.collapsed.rep.fa" into collapsed_fa_ch
     
     script:
     """
@@ -406,6 +406,53 @@ process collapse {
         --dun-merge-5-shorter \
         --prefix ${fasta.baseName}
     """
+}
+
+// fun fact: the perl used by gmst in the SQANTI tool CANNOT tolerate periods in a FASTA sequence name
+// guess what EVERY FECKING SEQUENCE NAME HAS TWO OF?
+process rename {
+    tag "sed name fix"
+    conda "./pb.yml"
+    
+    input:
+        file collapsed_gff from collapsed_gff_ch
+
+    output:
+        file "*.fixed.gff" into fixed_name_gff_ch
+
+    // two passes because there is a gene_id and transcript_id to fix
+    // and while I can make the capture group optional, I cannot seem to
+    // figure out how to not add the second period if the transcript number 
+    // is missing
+    script:
+    """
+    sed -r 's/PB\.([[:alnum:]]+)\.([[:alnum:]]+)/PB_\1_\2/g' ${collapsed_gff} | \
+    sed -r 's/PB\.([[:alnum:]]+)/PB_\1/g' > ${collapsed_gff.baseName}.fixed.gff
+    """
+}
+
+process sqanti {
+    tag "SQANTI3"
+    container "milescsmith/sqanti:1.0.0"
+
+    input:
+        file fixed_gff from fixed_name_gff_ch
+        val chunks from params.chunks
+
+    output:
+
+    script:
+    """
+    sqanti3_qc.py \
+        ${fixed_gff} \
+        ${params.annotation} \
+        ${params.genome} \
+        --cage_peak ${params.cage_peaks} \
+        --polyA_motif_list ${params.polyA_list} \
+        --cpus {task.cpus} \
+        --chunks ${chunks}
+    """
+
 }
 
 workflow.onError {
