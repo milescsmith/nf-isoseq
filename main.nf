@@ -109,6 +109,8 @@ process ccs_chunk_merging {
         """
 }
 
+// need to figure out how to rename the files made here
+// something in GMST does NOT like dashes in the file name
 process demux {
     conda "bioconda::lima"
 
@@ -247,7 +249,7 @@ process mapping {
     script:
     """
     gmap \
-        -D ${params.reference}
+        -D ${params.reference_dir}
         -d ${species} \
         -f samse \
         -n 0 \
@@ -353,6 +355,27 @@ process collapse {
     """
 }
 
+process sqanti {
+    tag "SQANTI"
+    publishDir
+
+    container "milescsmith/sqanti3:1.3.2"
+
+    input:
+
+    output:
+
+    script:
+    """
+    sqanti3_qc \
+                /s/guth-aci/isoseq/11_collapsed/demuxed.bc1001.flnc.unpolished.hq.collapsed.rep.fa \
+                ${params.annotation} \
+                ${params.ref_sequence} \
+                --cage_peak ${params.cage_ref} \
+                --polyA_motif_list ${polyA} \
+                --cpus ${task.cpus}
+    """
+}
 
 workflow.onComplete {
 	log.info ( workflow.success ? "\nDone!\n" : "Oops .. something went wrong" )
