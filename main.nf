@@ -40,8 +40,8 @@ process ccs_calling {
     conda "bioconda::pbccs"
 
     tag "CCS calling"
-    publishDir '${params.css-}', mode: 'copy', pattern: '*.ccs.bam', overwrite: true
-    publishDir '${params.css-}', mode: 'copy', pattern: "*.log", overwrite: true
+    publishDir "${params.css}", mode: "copy", pattern: "*.ccs.bam", overwrite: true
+    publishDir "${params.css}", mode: "copy", pattern: "*.log", overwrite: true
 
     input:
         file(subreads) from raw_subreads
@@ -64,14 +64,14 @@ process ccs_calling {
 }
 
 process demux {
-    conda "bioconda::lima"
+    container "quay.io/biocontainers/lima:1.11.0--0"
 
     cpus 16
     clusterOptions "--mem=256 --parition=highmem -o ~/demux.log"
 
     tag "Demultiplexing samples"
-    publishDir '${params.demux-}', mode: 'copy', pattern: '*.bam', overwrite: true
-    publishDir '${params.demux-}', mode: 'copy', pattern: '*.log', overwrite: true
+    publishDir "${params.demux}", mode: "copy", pattern: "*.bam", overwrite: true
+    publishDir "${params.demux}", mode: "copy", pattern: "*.log", overwrite: true
 
     input:
         // val sample from sample_name_ch
@@ -91,7 +91,7 @@ process demux {
             --num-threads ${task.cpus} \
             --log-level INFO \
             --log-file lima.demux.log \
-            --split-bam \
+            --split-bam-named \
             ${called_ccs} \
             ${params.barcodes} \
             demuxed.bam
@@ -99,11 +99,12 @@ process demux {
 }
 
 process refine {
-    conda "bioconda::isoseq3"
+    // conda "bioconda::isoseq3"
+    container "quay.io/biocontainers/isoseq3:3.3.0--0"
 
     tag "Refining"
-    publishDir '${params.refine-}', mode: 'copy', pattern: '*.flnc.bam', overwrite: true
-    publishDir '${params.refine-}', mode: 'copy', pattern: '*.log', overwrite: true
+    publishDir "${params.refine}", mode: "copy", pattern: "*.flnc.bam", overwrite: true
+    publishDir "${params.refine}", mode: "copy", pattern: "*.log", overwrite: true
 
     input:
         // val sample from sample_name_ch
@@ -128,11 +129,12 @@ process refine {
 }
 
 process cluster {
-    conda "bioconda::isoseq3"
+    // conda "bioconda::isoseq3"
+    container "quay.io/biocontainers/isoseq3:3.3.0--0"
 
     tag "Clustering"
-    publishDir '${params.unpolished-}', mode: 'copy', pattern: '*.bam', overwrite: true
-    publishDir '${params.unpolished-}', mode: 'copy', pattern: '*.log', overwrite: true
+    publishDir "${params.unpolished}", mode: "copy", pattern: "*.bam", overwrite: true
+    publishDir "${params.unpolished}", mode: "copy", pattern: "*.log", overwrite: true
 
     input:
         // val sample from sample_name_ch
@@ -157,11 +159,12 @@ process cluster {
 }
 
 process polish {
-    conda "bioconda::isoseq3"
+    // conda "bioconda::isoseq3"
+    container "quay.io/biocontainers/isoseq3:3.3.0--0"
 
     tag "Polishing"
-    publishDir '${params.polished-}', mode: 'copy', pattern: '*.bam', overwrite: true
-    publishDir '${params.polished-}', mode: 'copy', pattern: '*.log', overwrite: true
+    publishDir "${params.polished}", mode: "copy", pattern: "*.bam", overwrite: true
+    publishDir "${params.polished}", mode: "copy", pattern: "*.log", overwrite: true
 
     input:
         // val sample from sample_name_ch
@@ -187,11 +190,12 @@ process polish {
 }
 
 process mapping {
-    conda "bioconda::gmap==2020.04.08"
+    // conda "bioconda::gmap==2020.04.08"
+    container "quay.io/biocontainers/gmap:2020.06.01--pl526h2f06484_1"
 
     tag "Mapping"
-    publishDir '${params.mapped-}', mode: 'copy', pattern: '*.sam', overwrite: true
-    publishDir '${params.mapped-}', mode: 'copy', pattern: '*.log', overwrite: true
+    publishDir "${params.mapped}", mode: "copy", pattern: "*.sam", overwrite: true
+    publishDir "${params.mapped}", mode: "copy", pattern: "*.log", overwrite: true
 
     input:
         // val sample from sample_name_ch
@@ -219,10 +223,11 @@ process mapping {
 }
 
 process sort {
-    conda "bioconda::samtools==1.10"
+    // conda "bioconda::samtools==1.10"
+    container "quay.io/biocontainers/samtools:1.10--h9402c20_2"
 
     tag "Sorting"
-    publishDir '${params.sorted-}', mode: 'copy', pattern: '*.bam', overwrite: true
+    publishDir "${params.sorted}", mode: "copy", pattern: "*.bam", overwrite: true
 
     input:
         // val sample from sample_name_ch
@@ -242,10 +247,11 @@ process sort {
 }
 
 process transcompress {
-    conda "bioconda::samtools==1.10"
+    // conda "bioconda::samtools==1.10"
+    container "quay.io/biocontainers/samtools:1.10--h9402c20_2"
 
     tag "Transcompressing"
-    publishDir '${params.transcompressed-}', mode: 'copy', pattern: '*.fasta.gz', overwrite: true
+    publishDir "${params.transcompressed}", mode: "copy", pattern: "*.fasta.gz", overwrite: true
 
     input:
         // val sample from sample_name_ch
@@ -264,10 +270,10 @@ process transcompress {
 }
 
 process filter {
-    tag "Filtering"
-    publishDir '${params.filtered-}', mode: 'copy', pattern: '*.bam', overwrite: true
-    
     container "registry.gitlab.com/milothepsychic/filter_sam"
+    
+    tag "Filtering"
+    publishDir "${params.filtered}", mode: "copy", pattern: "*.bam", overwrite: true
 
     input:
         // val sample from sample_name_ch
@@ -288,7 +294,7 @@ process filter {
 
 process collapse {
     tag "Collapsing"
-    publishDir '${params.collapsed-}', mode: 'copy', pattern: '*.gff', overwrite: true
+    publishDir "${params.collapsed}", mode: "copy", pattern: "*.gff", overwrite: true
 
     container "milescsmith/cdna_cupcake"
 
