@@ -295,16 +295,26 @@ process filter {
 process collapse {
     tag "Collapsing"
     publishDir "${params.collapsed}", mode: "copy", pattern: "*.gff", overwrite: true
+    publishDir "${params.collapsed}", mode: "copy", pattern: "*.unfuzzy", overwrite: true
+    publishDir "${params.collapsed}", mode: "copy", pattern: "*.group.txt", overwrite: true
+    publishDir "${params.collapsed}", mode: "copy", pattern: "*.group.txt.unfuzzy", overwrite: true
+    publishDir "${params.collapsed}", mode: "copy", pattern: "*.rep.fa", overwrite: true
+    publishDir "${params.collapsed}", mode: "copy", pattern: "*.ignored_ids.txt", overwrite: true
+    publishDir "${params.collapsed}", mode: "copy", pattern: "*.sam", overwrite: true
+    publishDir "${params.collapsed}", mode: "copy", pattern: "*.fasta", overwrite: true
 
-    container "milescsmith/sqanti3:"
+    container "milescsmith/cdna_cupcake:./cdna_cupcake.yml"
 
     input:
         // val sample from sample_name_ch
         file filtered from filtered_ch
-        file fasta from bgzipped_hq_ch_2
+        file fasta from unpolished_hq_fa_for_cupcake_ch
 
+    // Until we have a next step, these just keep the parent process from completing
     output:
-        file "${sample}.gff" into collapsed_ch
+        file "*.collapsed.gff" into collapsed_gff_ch
+        // file "*.collapsed.gff.unfuzzy" into collapsed_unfuzzy_gff_ch
+        file "*.collapsed.rep.fa" into collapsed_fa_ch
     
     script:
     """
@@ -312,7 +322,78 @@ process collapse {
         --input ${fasta} \
         --sam ${filtered} \
         --dun-merge-5-shorter \
-        --prefix ${sample}
+        --prefix ${fasta.baseName}
+    """
+}
+
+// perl - which is unfortunately still key to GeneMark S-T use
+// by pygmst - seems to have a problem with either double dashes
+// or long file names.  So we are going to rename everything
+process rename {
+    tag "sed name fix"
+    container "milescsmith/rename:0.20-7"
+    
+    input:
+        file collapsed_fa from collapsed_fa_ch
+
+    output:
+        file "*.fa" into fixed_name_fa_ch
+
+    // two passes because there is a gene_id and transcript_id to fix
+    // and while I can make the capture group optional, I cannot seem to
+    // figure out how to not add the second period if the transcript number 
+    // is missing
+    script:
+    """
+    rename 's/_5p\-\-bc[0-9]{4}_3p//' ${collapsed_fa} | rename 's/^demuxed\.//'
+    """
+}
+
+process sqanti {
+    tag "SQANTI3"
+    container "milescsmith/sqanti:1.3.10"
+
+    publishDir "${params.sqanti}", mode: "copy", pattern: "*.pdf", overwrite: true
+    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep.params.txt", overwrite: true
+    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_classification.txt", overwrite: true
+    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.faa", overwrite: true
+    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.fasta", overwrite: true
+    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.fasta.fai", overwrite: true
+    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.genePred", overwrite: true
+    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.gtf", overwrite: true
+    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.gtf.cds.gff", overwrite: true
+    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.gtf.tmp", overwrite: true
+    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.sam", overwrite: true
+    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected_indels.txt", overwrite: true
+    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_junctions.txt", overwrite: true
+
+    input:
+        file fixed_name_fa from fixed_name_fa_ch
+
+    output:
+        // *.rep.params.txt
+        // *.rep_classification.txt
+        // *.rep_corrected.faa
+        // *.rep_corrected.fasta
+        // *.rep_corrected.fasta.fai
+        // *.rep_corrected.genePred
+        // *.rep_corrected.gtf
+        // *.rep_corrected.gtf.cds.gff
+        // *.rep_corrected.gtf.tmp
+        // *.rep_corrected.sam
+        // *.rep_corrected_indels.txt
+        // *.rep_junctions.txt
+        file "*.rep_sqanti_report.pdf" into sq_report_ch
+
+    script:
+    """
+    sqanti3_qc \
+        /s/guth-aci/isoseq/11_collapsed/*.rep.fa \
+        ${params.annotation} \
+        ${params.genome} \
+        --cage_peak ${params.cage_peaks} \
+        --polyA_motif_list ${polyA} \
+        --cpus ${task.cpus}
     """
 }
 
