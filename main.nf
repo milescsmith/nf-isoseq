@@ -296,7 +296,7 @@ process collapse {
     tag "Collapsing"
     publishDir "${params.collapsed}", mode: "copy", pattern: "*.gff", overwrite: true
 
-    container "milescsmith/cdna_cupcake"
+    container "milescsmith/sqanti3:"
 
     input:
         // val sample from sample_name_ch
