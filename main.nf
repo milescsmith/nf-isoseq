@@ -351,7 +351,7 @@ process rename {
 
 process sqanti {
     tag "SQANTI3"
-    container "milescsmith/sqanti:1.3.10"
+    container "milescsmith/sqanti:1.3.11"
 
     publishDir "${params.sqanti}", mode: "copy", pattern: "*.pdf", overwrite: true
     publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep.params.txt", overwrite: true
