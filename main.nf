@@ -187,8 +187,8 @@ process ccs_chunk_merging {
 // need to figure out how to rename the files made here
 // something in GMST does NOT like dashes in the file name
 process demux {
-    // conda "bioconda::lima"
-    container "quay.io/biocontainers/lima:1.11.0--0"
+    conda "bioconda::lima"
+    // container "quay.io/biocontainers/lima:1.11.0--0"
 
     tag "Demultiplexing samples"
     //publishDir "${params.demux}", mode: "copy", pattern: "*.bam", overwrite: true
@@ -219,8 +219,8 @@ process demux {
 }
 
 process refine {
-    // conda "bioconda::isoseq3"
-    container "quay.io/biocontainers/isoseq3:3.3.0--0"
+    conda "bioconda::isoseq3"
+    // container "quay.io/biocontainers/isoseq3:3.3.0--0"
 
     tag "Refining"
     //publishDir "${params.refine}", mode: "copy", pattern: "*.flnc.bam", overwrite: true
@@ -248,8 +248,8 @@ process refine {
 }
 
 process cluster {
-    // conda "bioconda::isoseq3"
-    container "quay.io/biocontainers/isoseq3:3.3.0--0"
+    conda "bioconda::isoseq3"
+    // container "quay.io/biocontainers/isoseq3:3.3.0--0"
 
     tag "Clustering"
     //publishDir "${params.unpolished}", mode: "copy", pattern: "*.bam", overwrite: true
@@ -311,8 +311,8 @@ process cluster {
 // }
 
 process uncompress {
-    // conda "bioconda::samtools==1.10"
-    container "quay.io/biocontainers/samtools:1.10--h9402c20_2"
+    conda "bioconda::samtools==1.10"
+    // container "quay.io/biocontainers/samtools:1.10--h9402c20_2"
 
     tag "Uncompressing"
     //publishDir "${params.transcompressed}", mode: "copy", pattern: "*.fasta.gz", overwrite: true
@@ -332,8 +332,8 @@ process uncompress {
 
 process mapping {
     // so I guess gmap 2020.04.08 from bioconda cannot handle compressed fasta?
-    // conda "bioconda::gmap==2020.04.08"
-    container "quay.io/biocontainers/gmap:2020.06.01--pl526h2f06484_1"
+    conda "bioconda::gmap==2020.06.01"
+    // container "quay.io/biocontainers/gmap:2020.06.01--pl526h2f06484_1"
 
     tag "Mapping"
     //publishDir "${params.mapped}", mode: "copy", pattern: "*.sam", overwrite: true
@@ -363,8 +363,8 @@ process mapping {
 }
 
 process sort {
-    // conda "bioconda::samtools==1.10"
-    container "quay.io/biocontainers/samtools:1.10--h9402c20_2"
+    conda "bioconda::samtools==1.10"
+    // container "quay.io/biocontainers/samtools:1.10--h9402c20_2"
     tag "Sorting"
     publishDir "${params.sorted}", mode: "copy", pattern: "*.bam", overwrite: true
 
@@ -386,8 +386,8 @@ process sort {
 }
 
 process index_sorted {
-    // conda "bioconda::samtools==1.10"
-    container "quay.io/biocontainers/samtools:1.10--h9402c20_2"
+    conda "bioconda::samtools==1.10"
+    // container "quay.io/biocontainers/samtools:1.10--h9402c20_2"
 
     tag "Index sorted"
 
@@ -411,8 +411,8 @@ process filter {
     tag "Filtering"
     //publishDir "${params.filtered}", mode: "copy", pattern: "*.bam", overwrite: true
     
-    // conda "./filter_sam.yml"
-    container "registry.gitlab.com/milothepsychic/filter_sam"
+    conda "./filter_sam.yml"
+    // container "registry.gitlab.com/milothepsychic/filter_sam"
 
     input:
         // val sample from sample_name_ch
@@ -433,8 +433,8 @@ process filter {
 }
 
 process compress {
-    // conda "bioconda::samtools==1.10"
-    container "quay.io/biocontainers/samtools:1.10--h9402c20_2"
+    conda "bioconda::samtools==1.10"
+    // container "quay.io/biocontainers/samtools:1.10--h9402c20_2"
 
     tag "Compressing"
     //publishDir "${params.transcompressed}", mode: "copy", pattern: "*.fasta.gz", overwrite: true
@@ -463,8 +463,8 @@ process collapse {
     publishDir "${params.collapsed}", mode: "copy", pattern: "*.sam", overwrite: true
     publishDir "${params.collapsed}", mode: "copy", pattern: "*.fasta", overwrite: true
 
-    // conda "./cdna_cupcake.yml"
-    container "milescsmith/cdna_cupcake:12.2.8"
+    conda "./cdna_cupcake.yml"
+    // container "milescsmith/cdna_cupcake:12.2.8"
 
     input:
         // val sample from sample_name_ch
@@ -512,7 +512,9 @@ process rename {
 
 process sqanti {
     tag "SQANTI3"
-    container "milescsmith/sqanti:1.3.11"
+    // container "milescsmith/sqanti:1.3.11"
+    conda "./sqanti3.yml"
+
 
     publishDir "${params.sqanti}", mode: "copy", pattern: "*.pdf", overwrite: true
     publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep.params.txt", overwrite: true
