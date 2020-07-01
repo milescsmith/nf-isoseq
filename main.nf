@@ -322,7 +322,7 @@ process uncompress {
         file gzipped_fasta from gzipped_hq_ch
 
     output:
-        file "*.fasta" into unpolished_hq_fa_ch, unzipped_hq_fa_ch, filter_fa_hq_ch, unpolished_hq_fa_for_cupcake_ch
+        file "*.fasta" into unpolished_hq_fa_ch, unpolished_hq_fa_for_cupcake_ch //, unzipped_hq_fa_ch, filter_fa_hq_ch
 
     script:
     """
@@ -343,7 +343,7 @@ process mapping {
         file hq_fasta from unpolished_hq_fa_ch
 
     output:
-        file "*.mapped.sam" into mapped_ch
+        tuple file("*.mapped.sam"), file(hq_fasta) into mapped_ch
 
     script:
     """
@@ -370,90 +370,90 @@ process sort {
 
     input:
         // val sample from sample_name_ch
-        file mapped_sam from mapped_ch
+        tuple file(mapped_sam), file(hq_fasta) from mapped_ch
 
     output:
-        file "*.sorted.bam" into sorted_ch, sorted_filtering_bam_ch
+        tuple file("*.sorted.sam"), file(hq_fasta) into sorted_for_collapsing_bam_ch, sorting_ch //sorted_filtering_bam_ch
     
     script:
     """
     samtools \
         sort \
-        -O BAM \
+        -O SAM \
         ${mapped_sam} \
-        -o ${mapped_sam.baseName}.sorted.bam
+        -o ${mapped_sam.baseName}.sorted.sam
     """
 }
 
-process index_sorted {
-    conda "bioconda::samtools==1.10"
-    // container "quay.io/biocontainers/samtools:1.10--h9402c20_2"
+// process index_sorted {
+//     conda "bioconda::samtools==1.10"
+//     // container "quay.io/biocontainers/samtools:1.10--h9402c20_2"
 
-    tag "Index sorted"
+//     tag "Index sorted"
 
-    input:
-        file sorted_bam from sorted_ch
+//     input:
+//         tuple file(sorted_sam), file(hq_fasta) from sorting_ch
     
-    output:
-        file "*.bai" into sorted_index_ch
+//     output:
+//         file "*.bai" into sorted_index_ch
 
-    script:
-    """
-    samtools \
-        index \
-        -@ ${task.cpus} \
-        ${sorted_bam} \
-        ${sorted_bam}.bai
-    """
-}
+//     script:
+//     """
+//     samtools \
+//         index \
+//         -@ ${task.cpus} \
+//         ${sorted_sam} \
+//         ${sorted_sam}.bai
+//     """
+// }
 
-process filter {
-    tag "Filtering"
-    //publishDir "${params.filtered}", mode: "copy", pattern: "*.bam", overwrite: true
+// process filter {
+//     tag "Filtering"
+//     //publishDir "${params.filtered}", mode: "copy", pattern: "*.bam", overwrite: true
     
-    conda "./filter_sam.yml"
-    // container "registry.gitlab.com/milothepsychic/filter_sam"
+//     conda "./environments/filter_sam.yml"
+//     // container "registry.gitlab.com/milothepsychic/filter_sam"
 
-    input:
-        // val sample from sample_name_ch
-        file hq_fasta from filter_fa_hq_ch
-        file sorted from sorted_filtering_bam_ch
-        file sorted_index from sorted_index_ch
+//     input:
+//         // val sample from sample_name_ch
+//         file hq_fasta from filter_fa_hq_ch
+//         file sorted from sorted_filtering_bam_ch
+//         file sorted_index from sorted_index_ch
 
-    output:
-        file "${sorted.baseName}_filtered.sam" into filtered_ch
+//     output:
+//         file "${sorted.baseName}_filtered.sam" into filtered_ch
 
-    script:
-    """
-    filter_sam \
-        --fasta ${hq_fasta} \
-        --sam ${sorted} \
-        --prefix ${sorted.baseName}_
-    """
-}
+//     script:
+//     """
+//     filter_sam \
+//         --fasta ${hq_fasta} \
+//         --sam ${sorted} \
+//         --prefix ${sorted.baseName}_
+//     """
+// }
 
-process compress {
-    conda "bioconda::samtools==1.10"
-    // container "quay.io/biocontainers/samtools:1.10--h9402c20_2"
+// process compress {
+//     conda "bioconda::samtools==1.10"
+//     // container "quay.io/biocontainers/samtools:1.10--h9402c20_2"
 
-    tag "Compressing"
-    //publishDir "${params.transcompressed}", mode: "copy", pattern: "*.fasta.gz", overwrite: true
+//     tag "Compressing"
+//     //publishDir "${params.transcompressed}", mode: "copy", pattern: "*.fasta.gz", overwrite: true
 
-    input:
-        // val sample from sample_name_ch
-        file unzipped_fasta from unzipped_hq_fa_ch
+//     input:
+//         // val sample from sample_name_ch
+//         file unzipped_fasta from unzipped_hq_fa_ch
 
-    output:
-        file "*.fasta.gz" into bgzipped_hq_ch, bgzipped_hq_ch_2
+//     output:
+//         file "*.fasta.gz" into bgzipped_hq_ch, bgzipped_hq_ch_2
 
-    script:
-    """
-    bgzip --index ${unzipped_fasta}
-    """
-}
+//     script:
+//     """
+//     bgzip --index ${unzipped_fasta}
+//     """
+// }
 
 process collapse {
-    tag "Collapsing"
+    tag "cDNA_Cupcake Collapse"
     publishDir "${params.collapsed}", mode: "copy", pattern: "*.gff", overwrite: true
     publishDir "${params.collapsed}", mode: "copy", pattern: "*.unfuzzy", overwrite: true
     publishDir "${params.collapsed}", mode: "copy", pattern: "*.group.txt", overwrite: true
@@ -463,27 +463,28 @@ process collapse {
     publishDir "${params.collapsed}", mode: "copy", pattern: "*.sam", overwrite: true
     publishDir "${params.collapsed}", mode: "copy", pattern: "*.fasta", overwrite: true
 
-    conda "./cdna_cupcake.yml"
+    conda "./environments/cdna_cupcake.yml"
     // container "milescsmith/cdna_cupcake:12.2.8"
 
     input:
         // val sample from sample_name_ch
-        file filtered from filtered_ch
-        file fasta from unpolished_hq_fa_for_cupcake_ch
+        // file filtered from filtered_ch
+        tuple file(sorted_sam), file(hq_fasta) from sorted_for_collapsing_bam_ch
+        // file fasta from unpolished_hq_fa_for_cupcake_ch
 
     // Until we have a next step, these just keep the parent process from completing
     output:
         file "*.collapsed.gff" into collapsed_gff_ch
         // file "*.collapsed.gff.unfuzzy" into collapsed_unfuzzy_gff_ch
-         file "*.collapsed.rep.fa" into collapsed_fa_ch
+        file "*.collapsed.rep.fa" into collapsed_fa_ch
     
     script:
     """
-    collapse_isoforms_by_sam.py \
-        --input ${fasta} \
-        --sam ${filtered} \
+    collapse_isoforms_by_sam \
+        --input ${hq_fasta} \
+        --sam ${sorted_sam} \
         --dun-merge-5-shorter \
-        --prefix ${fasta.baseName}
+        --prefix ${hq_fasta.baseName}
     """
 }
 
@@ -491,7 +492,7 @@ process collapse {
 // by pygmst - seems to have a problem with either double dashes
 // or long file names.  So we are going to rename everything
 process rename {
-    tag "sed name fix"
+    tag "name fix GeneMark"
     container "milescsmith/rename:0.20-7"
     
     input:
@@ -512,9 +513,8 @@ process rename {
 
 process sqanti {
     tag "SQANTI3"
-    // container "milescsmith/sqanti:1.3.11"
-    conda "./sqanti3.yml"
-
+    // container "milescsmith/sqanti3:1.3.13"
+    conda "./environments/sqanti3.yml"
 
     publishDir "${params.sqanti}", mode: "copy", pattern: "*.pdf", overwrite: true
     publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep.params.txt", overwrite: true
@@ -551,11 +551,11 @@ process sqanti {
     script:
     """
     sqanti3_qc \
-        /s/guth-aci/isoseq/11_collapsed/*.rep.fa \
+        ${fixed_name_fa} \
         ${params.annotation} \
         ${params.genome} \
         --cage_peak ${params.cage_peaks} \
-        --polyA_motif_list ${polyA} \
+        --polyA_motif_list ${params.polyA_list} \
         --cpus ${task.cpus}
     """
 }
