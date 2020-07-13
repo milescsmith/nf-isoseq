@@ -103,6 +103,10 @@ Channel
     .fromPath( params.barcodes )
     .into{ barcodes_ch; refine_barcodes_ch }
 
+Channel
+    .fromPath( params.barcodes )
+    .into{ barcodes_ch; refine_barcodes_ch }
+
 extract_bc = { item -> 
     item =~ /bc(\d+)\-\[FR]/
 }
@@ -531,6 +535,7 @@ process sqanti {
     input:
         file fixed_name_fa from fixed_name_fa_ch
 
+    // Until we have a next step, these just keep the parent process from completing
     output:
         file "*.rep.params.txt" into sqanti_ch_1
         file "*.rep.renamed.fasta" into sqanti_ch_2
