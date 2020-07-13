@@ -91,13 +91,13 @@ Channel
     .fromPath( params.input , checkIfExists: true )
     .into{ raw_subreads_1; raw_subreads_2 }
 
-Channel
-    .value()
-    .fromPath( params.barcodes )
-    .splitCsv( header:false )
-    .map{ row -> row[0].split("-")[0] }
-    .unique()
-    .set{ sample_name_ch }
+// Channel
+//     .value()
+//     .fromPath( params.barcodes )
+//     .splitCsv( header:false )
+//     .map{ row -> row[0].split("-")[0] }
+//     .unique()
+//     .set{ sample_name_ch }
 
 Channel
     .fromPath( params.barcodes )
@@ -513,8 +513,9 @@ process rename {
 
 process sqanti {
     tag "SQANTI3"
-    // container "milescsmith/sqanti3:1.3.13"
-    conda "./environments/sqanti3.yml"
+    container "milescsmith/sqanti3:1.4.0"
+    errorStrategy 'ignore' // sometimes, there's just this one file...
+    // conda "./environments/sqanti3.yml"
 
     publishDir "${params.sqanti}", mode: "copy", pattern: "*.pdf", overwrite: true
     publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep.params.txt", overwrite: true
@@ -529,23 +530,26 @@ process sqanti {
     publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.sam", overwrite: true
     publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected_indels.txt", overwrite: true
     publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_junctions.txt", overwrite: true
+    publishDir "${params.sqanti}", mode: "copy", pattern: "*.unpolished.hq.collapsed.rep.genePred", overwrite: true
 
     input:
         file fixed_name_fa from fixed_name_fa_ch
 
     output:
-        // *.rep.params.txt
-        // *.rep_classification.txt
-        // *.rep_corrected.faa
-        // *.rep_corrected.fasta
-        // *.rep_corrected.fasta.fai
-        // *.rep_corrected.genePred
-        // *.rep_corrected.gtf
-        // *.rep_corrected.gtf.cds.gff
-        // *.rep_corrected.gtf.tmp
-        // *.rep_corrected.sam
-        // *.rep_corrected_indels.txt
-        // *.rep_junctions.txt
+        file "*.rep.params.txt" into sqanti_ch_1
+        file "*.rep.renamed.fasta" into sqanti_ch_2
+        file "*.rep_classification.txt" into sqanti_ch_3
+        file "*.rep_corrected.faa" into sqanti_ch_4
+        file "*.rep_corrected.fasta" into sqanti_ch_5
+        file "*.rep_corrected.fasta.fai" into sqanti_ch_6
+        file "*.rep_corrected.genePred" into sqanti_ch_7
+        file "*.rep_corrected.gtf" into sqanti_ch_8
+        file "*.rep_corrected.gtf.cds.gff" into sqanti_ch_9
+        file "*.rep_corrected.gtf.tmp" into sqanti_ch_10
+        file "*.rep_corrected.sam" into sqanti_ch_11
+        file "*.rep_corrected_indels.txt" into sqanti_ch_12
+        file "*.rep_junctions.txt" into sqanti_ch_13
+        file "*.unpolished.hq.collapsed.rep.genePred" into sqanti_ch_14
         file "*.rep_sqanti_report.pdf" into sq_report_ch
 
     script:
