@@ -488,8 +488,8 @@ process collapse {
     """
 }
 
-// perl - which is unfortunately still key to GeneMark S-T use
-// by pygmst - seems to have a problem with either double dashes
+// GeneMark S-T which is still foundational to pygmst - seems
+// to have a problem with either double dashes
 // or long file names.  So we are going to rename everything
 process rename {
     tag "name fix GeneMark"
@@ -501,10 +501,6 @@ process rename {
     output:
         file "*.fa" into fixed_name_fa_ch
 
-    // two passes because there is a gene_id and transcript_id to fix
-    // and while I can make the capture group optional, I cannot seem to
-    // figure out how to not add the second period if the transcript number 
-    // is missing
     script:
     """
     rename 's/_5p\\-\\-bc[0-9]{4}_3p//' ${collapsed_fa} | rename 's/^demuxed\\.//'
