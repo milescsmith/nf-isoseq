@@ -13,10 +13,33 @@
 
 // Nextflow pipeline for processing PacBio IsoSeq runs
 // Author: Miles Smith <miles-smith@omrf.org>
-// Date: 2020/05/26
-// Version: 0.1.0
+// Date: 2021/05/05
+// Version: 0.2.0
+
+// Note: I've borrowed a bit of code from nf-core/rnaseq
 
 // File locations and program parameters
+nextflow.enable.dsl=2
+
+checkPathParamList = [
+    params.annotation,
+    params.genome,
+    params.cage_peaks,
+    params.polyA_list,
+    params.barcode,
+]
+
+alignerList = ["minimap2", "desalt2", "gmap"]
+
+for (param in checkPathParamList) {
+    if (param) {
+        file(param, checkIfExists: true)
+        } 
+}
+
+if (!alignerList.contains(params.aligner)) {
+    exit 1, "That is not a valid aligner choice.  Please choose from ${alignerList.join(', ')}"
+}
 
 def helpMessage() {
     log.info nfcoreHeader()
@@ -265,7 +288,7 @@ process cluster {
     
     output:
         file "*.unpolished.bam" into unpolished_bam_ch
-        file "*.hq.fasta.gz" into gzipped_hq_ch
+        // file "*.hq.fasta.gz" into gzipped_hq_ch
         file "*.lq.fasta.gz" into unpolished_lq_ch
 
 
@@ -283,36 +306,36 @@ process cluster {
     """
 }
 
-// Since this takes forever, need to make it optional
-// process polish {
-//     conda "bioconda::isoseq3"
+//Since this takes forever, need to make it optional
+process polish {
+    conda "bioconda::isoseq3"
 // container "quay.io/biocontainers/isoseq3:3.3.0--0"
 
-//     tag "Polishing"
-//     //publishDir "${params.polished}", mode: "copy", pattern: "*.bam", overwrite: true
-//     publishDir "${params.logs}/polished", mode: "copy", pattern: "*.log", overwrite: true
+    tag "Polishing"
+    //publishDir "${params.polished}", mode: "copy", pattern: "*.bam", overwrite: true
+    publishDir "${params.logs}/polished", mode: "copy", pattern: "*.log", overwrite: true
 
-//     input:
-//         // val sample from sample_name_ch
-//         file unpolished_bam from unpolished_bam_ch
+    input:
+        // val sample from sample_name_ch
+        file unpolished_bam from unpolished_bam_ch
     
-//     output:
-//         file "*.polished.bam" into polished_bam_ch
-//         file "*.hq.fasta.gz" into polished_hq_ch, gzipped_hq_ch
-//         file "*.lq.fasta.gz" into polished_lq_ch
+    output:
+        file "*.polished.bam" into polished_bam_ch
+        file "*.hq.fasta.gz" into polished_hq_ch, gzipped_hq_ch
+        file "*.lq.fasta.gz" into polished_lq_ch
 
-//     script:
-//     """
-//     isoseq3 \
-//         polish \
-//         --num-threads ${task.cpus} \
-//         --log-file ${unpolished_bam.baseName}.log \
-//         --log-level INFO \
-//         --verbose \
-//         ${unpolished_bam} \
-//         ${unpolished_bam.baseName}.polished.bam
-//     """
-// }
+    script:
+    """
+    isoseq3 \
+        polish \
+        --num-threads ${task.cpus} \
+        --log-file ${unpolished_bam.baseName}.log \
+        --log-level INFO \
+        --verbose \
+        ${unpolished_bam} \
+        ${unpolished_bam.baseName}.polished.bam
+    """
+}
 
 process uncompress {
     conda "bioconda::samtools==1.10"
@@ -340,7 +363,7 @@ process mapping {
     // container "quay.io/biocontainers/gmap:2020.06.01--pl526h2f06484_1"
 
     tag "Mapping"
-    //publishDir "${params.mapped}", mode: "copy", pattern: "*.sam", overwrite: true
+    // publishDir "${params.mapped}", mode: "copy", pattern: "*.sam", overwrite: true
     publishDir "${params.logs}/mapped", mode: "copy", pattern: "*.log", overwrite: true
 
     input:
