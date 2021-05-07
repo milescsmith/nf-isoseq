@@ -113,7 +113,8 @@ extract_bc = { item ->
 
 // change most of these "bioconda::[package]" to pb.yml
 process ccs_indexing {
-    conda "bioconda::pbbam"
+    // conda "bioconda::pbbam"
+    container "quay.io/biocontainers/pbbam:1.6.0--h058f120_1"
 
     tag "CCS indexing"
     // publishDir "${params.raw}", mode: "copy", pattern : "*.bam.pbi", overwrite: false
@@ -134,8 +135,9 @@ process ccs_calling {
     // Need to rewrite so as to chunk and parallelize https://github.com/PacificBiosciences/ccs#how-can-I-parallelize-on-multiple-servers
 
     // Okay, now make chunking optional
-    conda "bioconda::pbccs"
-    
+    // conda "bioconda::pbccs"
+    container "quay.io/biocontainers/pbccs:6.0.0--h9ee0642_2"
+
     cpus 8
     maxForks 8
 
@@ -168,7 +170,8 @@ process ccs_calling {
 }
 
 process ccs_chunk_merging {
-    conda "bioconda::pbbam"
+    //conda "bioconda::pbbam"
+    container "quay.io/biocontainers/pbbam:1.6.0--h058f120_1"
 
     tag "CCS chunk merging"
     // publishDir "${params.ccs}", mode: "copy", pattern: "*.ccs.bam", overwrite: true
@@ -191,8 +194,8 @@ process ccs_chunk_merging {
 // need to figure out how to rename the files made here
 // something in GMST does NOT like dashes in the file name
 process demux {
-    conda "bioconda::lima"
-    // container "quay.io/biocontainers/lima:1.11.0--0"
+    // conda "bioconda::lima"
+    container "quay.io/biocontainers/lima:2.0.0--0"
 
     tag "Demultiplexing samples"
     //publishDir "${params.demux}", mode: "copy", pattern: "*.bam", overwrite: true
@@ -223,8 +226,8 @@ process demux {
 }
 
 process refine {
-    conda "bioconda::isoseq3"
-    // container "quay.io/biocontainers/isoseq3:3.3.0--0"
+    // conda "bioconda::isoseq3"
+    container "quay.io/biocontainers/isoseq3:3.4.0--0"
 
     tag "Refining"
     //publishDir "${params.refine}", mode: "copy", pattern: "*.flnc.bam", overwrite: true
@@ -252,8 +255,8 @@ process refine {
 }
 
 process cluster {
-    conda "bioconda::isoseq3"
-    // container "quay.io/biocontainers/isoseq3:3.3.0--0"
+    // conda "bioconda::isoseq3"
+    container "quay.io/biocontainers/isoseq3:3.4.0--0"
 
     tag "Clustering"
     //publishDir "${params.unpolished}", mode: "copy", pattern: "*.bam", overwrite: true
@@ -283,83 +286,115 @@ process cluster {
     """
 }
 
-// Since this takes forever, need to make it optional
-// process polish {
-//     conda "bioconda::isoseq3"
-// container "quay.io/biocontainers/isoseq3:3.3.0--0"
+// Since this takes forever, need to make it optional or find a way to speed it up
+process polish {
+    // conda "bioconda::isoseq3"
+    container "quay.io/biocontainers/isoseq3:3.4.0--0"
 
-//     tag "Polishing"
-//     //publishDir "${params.polished}", mode: "copy", pattern: "*.bam", overwrite: true
-//     publishDir "${params.logs}/polished", mode: "copy", pattern: "*.log", overwrite: true
-
-//     input:
-//         // val sample from sample_name_ch
-//         file unpolished_bam from unpolished_bam_ch
-    
-//     output:
-//         file "*.polished.bam" into polished_bam_ch
-//         file "*.hq.fasta.gz" into polished_hq_ch, gzipped_hq_ch
-//         file "*.lq.fasta.gz" into polished_lq_ch
-
-//     script:
-//     """
-//     isoseq3 \
-//         polish \
-//         --num-threads ${task.cpus} \
-//         --log-file ${unpolished_bam.baseName}.log \
-//         --log-level INFO \
-//         --verbose \
-//         ${unpolished_bam} \
-//         ${unpolished_bam.baseName}.polished.bam
-//     """
-// }
-
-process uncompress {
-    conda "bioconda::samtools==1.10"
-    // container "quay.io/biocontainers/samtools:1.10--h9402c20_2"
-
-    tag "Uncompressing"
-    //publishDir "${params.transcompressed}", mode: "copy", pattern: "*.fasta.gz", overwrite: true
+    tag "Polishing"
+    publishDir "${params.polished}", mode: "copy", pattern: "*.bam", overwrite: true
+    publishDir "${params.logs}/polished", mode: "copy", pattern: "*.log", overwrite: true
 
     input:
         // val sample from sample_name_ch
-        file gzipped_fasta from gzipped_hq_ch
-
+        file unpolished_bam from unpolished_bam_ch
+    
     output:
-        file "*.fasta" into unpolished_hq_fa_ch, unpolished_hq_fa_for_cupcake_ch //, unzipped_hq_fa_ch, filter_fa_hq_ch
+        file "*.polished.bam" into polished_bam_ch
+        file "*.hq.fasta.gz" into polished_hq_ch
+        file "*.lq.fasta.gz" into polished_lq_ch
 
     script:
     """
-    bgzip --decompress ${gzipped_fasta}
+    isoseq3 \
+        polish \
+        --num-threads ${task.cpus} \
+        --log-file ${unpolished_bam.baseName}.log \
+        --log-level INFO \
+        --verbose \
+        ${unpolished_bam} \
+        ${unpolished_bam.baseName}.polished.bam
     """
 }
 
+// process uncompress {
+//     conda "bioconda::samtools==1.10"
+//     // container "quay.io/biocontainers/samtools:1.10--h9402c20_2"
+
+//     tag "Uncompressing"
+//     //publishDir "${params.transcompressed}", mode: "copy", pattern: "*.fasta.gz", overwrite: true
+
+//     input:
+//         // val sample from sample_name_ch
+//         file gzipped_fasta from gzipped_hq_ch
+
+//     output:
+//         file "*.fasta" into polished_hq_fa_ch, unpolished_hq_fa_for_cupcake_ch //, unzipped_hq_fa_ch, filter_fa_hq_ch
+
+//     script:
+//     """
+//     bgzip --decompress ${gzipped_fasta}
+//     """
+// }
+
+// Rewrite to make it easy to switch aligners.  Maybe only easy with DSL2
+// process mapping {
+//     // so I guess gmap 2020.04.08 from bioconda cannot handle compressed fasta?
+//     conda "bioconda::gmap==2020.06.01"
+//     // container "quay.io/biocontainers/gmap:2020.06.01--pl526h2f06484_1"
+
+//     tag "Mapping"
+//     //publishDir "${params.mapped}", mode: "copy", pattern: "*.sam", overwrite: true
+//     publishDir "${params.logs}/mapped", mode: "copy", pattern: "*.log", overwrite: true
+
+//     input:
+//         file hq_fasta from unpolished_hq_fa_ch
+
+//     output:
+//         tuple file("*.mapped.sam"), file(hq_fasta) into mapped_ch
+
+//     script:
+//     """
+//     gmap \
+//         -D ${params.reference} \
+//         -d ${params.species} \
+//         -f samse \
+//         -n 0 \
+//         -t ${task.cpus} \
+//         --cross-species \
+//         --max-intronlength-ends 200000 \
+//         -z sense_force \
+//         ${hq_fasta} \
+//         > ${hq_fasta.baseName}.mapped.sam \
+//         2> ${hq_fasta.baseName}.mapped.log
+//     """
+// }
+
 process mapping {
-    // so I guess gmap 2020.04.08 from bioconda cannot handle compressed fasta?
-    conda "bioconda::gmap==2020.06.01"
-    // container "quay.io/biocontainers/gmap:2020.06.01--pl526h2f06484_1"
+    // conda "bioconda::minimap2==2.18"
+    container "quay.io/biocontainers/minimap2:2.18--h5bf99c6_0"
 
     tag "Mapping"
-    //publishDir "${params.mapped}", mode: "copy", pattern: "*.sam", overwrite: true
+    publishDir "${params.mapped}", mode: "copy", pattern: "*.sam", overwrite: true
     publishDir "${params.logs}/mapped", mode: "copy", pattern: "*.log", overwrite: true
 
     input:
-        file hq_fasta from unpolished_hq_fa_ch
+        file hq_fasta from polished_hq_ch
 
     output:
         tuple file("*.mapped.sam"), file(hq_fasta) into mapped_ch
 
     script:
     """
-    gmap \
-        -D ${params.reference} \
-        -d ${params.species} \
-        -f samse \
-        -n 0 \
-        -t ${task.cpus} \
-        --cross-species \
-        --max-intronlength-ends 200000 \
-        -z sense_force \
+    minimap2 \
+        -H \
+        -t {task.cpus} \
+        -ax splice:hq \
+        -uf \
+        --secondary=no \
+        -O6,24 \
+        -B4 \
+        ${params.minimap_index} \
         ${hq_fasta} \
         > ${hq_fasta.baseName}.mapped.sam \
         2> ${hq_fasta.baseName}.mapped.log
@@ -367,8 +402,8 @@ process mapping {
 }
 
 process sort {
-    conda "bioconda::samtools==1.10"
-    // container "quay.io/biocontainers/samtools:1.10--h9402c20_2"
+    // conda "bioconda::samtools==1.10"
+    container "quay.io/biocontainers/samtools:1.12--h9aed4be_1"
     tag "Sorting"
     publishDir "${params.sorted}", mode: "copy", pattern: "*.bam", overwrite: true
 
@@ -467,8 +502,8 @@ process collapse {
     publishDir "${params.collapsed}", mode: "copy", pattern: "*.sam", overwrite: true
     publishDir "${params.collapsed}", mode: "copy", pattern: "*.fasta", overwrite: true
 
-    conda "./environments/cdna_cupcake.yml"
-    // container "milescsmith/cdna_cupcake:12.2.8"
+    // conda "./environments/cdna_cupcake.yml"
+    container "milescsmith/cupcake:21.2.0"
 
     input:
         // val sample from sample_name_ch
@@ -511,59 +546,59 @@ process rename {
     """
 }
 
-process sqanti {
-    tag "SQANTI3"
-    container "milescsmith/sqanti3:1.4.0"
-    errorStrategy 'ignore' // sometimes, there's just this one file...
-    // conda "./environments/sqanti3.yml"
+// process sqanti {
+//     tag "SQANTI3"
+//     container "milescsmith/sqanti3:1.4.0"
+//     errorStrategy 'ignore' // sometimes, there's just this one file...
+//     // conda "./environments/sqanti3.yml"
 
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.pdf", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep.params.txt", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_classification.txt", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.faa", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.fasta", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.fasta.fai", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.genePred", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.gtf", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.gtf.cds.gff", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.gtf.tmp", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.sam", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected_indels.txt", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_junctions.txt", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.unpolished.hq.collapsed.rep.genePred", overwrite: true
+//     publishDir "${params.sqanti}", mode: "copy", pattern: "*.pdf", overwrite: true
+//     publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep.params.txt", overwrite: true
+//     publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_classification.txt", overwrite: true
+//     publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.faa", overwrite: true
+//     publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.fasta", overwrite: true
+//     publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.fasta.fai", overwrite: true
+//     publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.genePred", overwrite: true
+//     publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.gtf", overwrite: true
+//     publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.gtf.cds.gff", overwrite: true
+//     publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.gtf.tmp", overwrite: true
+//     publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.sam", overwrite: true
+//     publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected_indels.txt", overwrite: true
+//     publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_junctions.txt", overwrite: true
+//     publishDir "${params.sqanti}", mode: "copy", pattern: "*.unpolished.hq.collapsed.rep.genePred", overwrite: true
 
-    input:
-        file fixed_name_fa from fixed_name_fa_ch
+//     input:
+//         file fixed_name_fa from fixed_name_fa_ch
 
-    // Until we have a next step, these just keep the parent process from completing
-    output:
-        file "*.rep.params.txt" into sqanti_ch_1
-        file "*.rep.renamed.fasta" into sqanti_ch_2
-        file "*.rep_classification.txt" into sqanti_ch_3
-        file "*.rep_corrected.faa" into sqanti_ch_4
-        file "*.rep_corrected.fasta" into sqanti_ch_5
-        file "*.rep_corrected.fasta.fai" into sqanti_ch_6
-        file "*.rep_corrected.genePred" into sqanti_ch_7
-        file "*.rep_corrected.gtf" into sqanti_ch_8
-        file "*.rep_corrected.gtf.cds.gff" into sqanti_ch_9
-        file "*.rep_corrected.gtf.tmp" into sqanti_ch_10
-        file "*.rep_corrected.sam" into sqanti_ch_11
-        file "*.rep_corrected_indels.txt" into sqanti_ch_12
-        file "*.rep_junctions.txt" into sqanti_ch_13
-        file "*.unpolished.hq.collapsed.rep.genePred" into sqanti_ch_14
-        file "*.rep_sqanti_report.pdf" into sq_report_ch
+//     // Until we have a next step, these just keep the parent process from completing
+//     output:
+//         file "*.rep.params.txt" into sqanti_ch_1
+//         file "*.rep.renamed.fasta" into sqanti_ch_2
+//         file "*.rep_classification.txt" into sqanti_ch_3
+//         file "*.rep_corrected.faa" into sqanti_ch_4
+//         file "*.rep_corrected.fasta" into sqanti_ch_5
+//         file "*.rep_corrected.fasta.fai" into sqanti_ch_6
+//         file "*.rep_corrected.genePred" into sqanti_ch_7
+//         file "*.rep_corrected.gtf" into sqanti_ch_8
+//         file "*.rep_corrected.gtf.cds.gff" into sqanti_ch_9
+//         file "*.rep_corrected.gtf.tmp" into sqanti_ch_10
+//         file "*.rep_corrected.sam" into sqanti_ch_11
+//         file "*.rep_corrected_indels.txt" into sqanti_ch_12
+//         file "*.rep_junctions.txt" into sqanti_ch_13
+//         file "*.unpolished.hq.collapsed.rep.genePred" into sqanti_ch_14
+//         file "*.rep_sqanti_report.pdf" into sq_report_ch
 
-    script:
-    """
-    sqanti3_qc \
-        ${fixed_name_fa} \
-        ${params.annotation} \
-        ${params.genome} \
-        --cage_peak ${params.cage_peaks} \
-        --polyA_motif_list ${params.polyA_list} \
-        --cpus ${task.cpus}
-    """
-}
+//     script:
+//     """
+//     sqanti3_qc \
+//         ${fixed_name_fa} \
+//         ${params.annotation} \
+//         ${params.genome} \
+//         --cage_peak ${params.cage_peaks} \
+//         --polyA_motif_list ${params.polyA_list} \
+//         --cpus ${task.cpus}
+//     """
+// }
 
 workflow.onError {
     println "Pipeline execution stopped with the following message: ${workflow.errorMessage}"
