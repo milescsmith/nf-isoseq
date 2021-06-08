@@ -508,7 +508,7 @@ process collapse {
     publishDir "${params.collapsed}", mode: "copy", pattern: "*.fasta", overwrite: true
 
     // conda "./environments/cdna_cupcake.yml"
-    // container "milescsmith/cdna_cupcake:21.2.5"
+    container "milescsmith/cupcake:21.2.6"
 
     input:
         // val sample from sample_name_ch
@@ -553,7 +553,7 @@ process rename {
 
 process sqanti {
     tag "SQANTI3"
-    // container "milescsmith/sqanti3:1.8.1"
+    container "milescsmith/sqanti3:1.9.3"
     errorStrategy 'ignore' // sometimes, there's just this one file...
     // conda "./environments/sqanti3.yml"
 
