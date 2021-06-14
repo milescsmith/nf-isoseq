@@ -88,20 +88,15 @@ if (params.help) {
 params.input = "${params.raw}/*.subreads.bam"
 
 Channel
-    .fromPath( params.input , checkIfExists: true )
-    .into{ raw_subreads_1; raw_subreads_2 }
-
-// Channel
-//     .value()
-//     .fromPath( params.barcodes )
-//     .splitCsv( header:false )
-//     .map{ row -> row[0].split("-")[0] }
-//     .unique()
-//     .set{ sample_name_ch }
+    .fromPath( params.barcodes )
+    .splitFasta( record: [id: true, sequence: true] )
+    .map{ rec -> rec.id.split("_")[0] }
+    .unique()
+    .set { sqanti_sample_name_ch }
 
 Channel
-    .fromPath( params.barcodes )
-    .into{ barcodes_ch; refine_barcodes_ch }
+    .fromPath( params.input , checkIfExists: true )
+    .into{ raw_subreads_1; raw_subreads_2 }
 
 Channel
     .fromPath( params.barcodes )
@@ -113,9 +108,6 @@ extract_bc = { item ->
 
 // change most of these "bioconda::[package]" to pb.yml
 process ccs_indexing {
-    // conda "bioconda::pbbam"
-    container "quay.io/biocontainers/pbbam:1.6.0--h058f120_1"
-
     tag "CCS indexing"
     // publishDir "${params.raw}", mode: "copy", pattern : "*.bam.pbi", overwrite: false
     
@@ -135,12 +127,7 @@ process ccs_calling {
     // Need to rewrite so as to chunk and parallelize https://github.com/PacificBiosciences/ccs#how-can-I-parallelize-on-multiple-servers
 
     // Okay, now make chunking optional
-    // conda "bioconda::pbccs"
-    container "quay.io/biocontainers/pbccs:6.0.0--h9ee0642_2"
-
-    cpus 8
-    maxForks 8
-
+    
     tag "CCS calling"
     // publishDir "${params.ccs}", mode: "copy", pattern: "*.ccs.${chunk}.bam", overwrite: true
     // publishDir "${params.logs}/ccs", mode: "copy", pattern: "*.log", overwrite: true
@@ -166,13 +153,9 @@ process ccs_calling {
             ${subreads} \
             ${params.runid}.ccs.${chunk}.bam
         """
-
 }
 
 process ccs_chunk_merging {
-    //conda "bioconda::pbbam"
-    container "quay.io/biocontainers/pbbam:1.6.0--h058f120_1"
-
     tag "CCS chunk merging"
     // publishDir "${params.ccs}", mode: "copy", pattern: "*.ccs.bam", overwrite: true
     // publishDir "${params.ccs}", mode: "copy", pattern: "*.pbi", overwrite: true
@@ -194,15 +177,13 @@ process ccs_chunk_merging {
 // need to figure out how to rename the files made here
 // something in GMST does NOT like dashes in the file name
 process demux {
-    // conda "bioconda::lima"
-    container "quay.io/biocontainers/lima:2.0.0--0"
-
+    
     tag "Demultiplexing samples"
-    //publishDir "${params.demux}", mode: "copy", pattern: "*.bam", overwrite: true
+    publishDir "${params.demux}", mode: "copy", pattern: "*.bam", overwrite: true
     publishDir "${params.logs}/demux", mode: "copy", pattern: "*.log", overwrite: true
-    //publishDir "${params.logs}/demux", mode: "copy", pattern: "*.log", overwrite: true
+    
     input:
-        // val sample from sample_name_ch
+        // val sample from demux_sample_name_ch
         file called_ccs from ccs_ch
         file(barcodes) from barcodes_ch
     
@@ -226,14 +207,13 @@ process demux {
 }
 
 process refine {
-    // conda "bioconda::isoseq3"
-    container "quay.io/biocontainers/isoseq3:3.4.0--0"
 
     tag "Refining"
     publishDir "${params.refined}", mode: "copy", pattern: "*.flnc.bam", overwrite: true
     publishDir "${params.logs}/refine", mode: "copy", pattern: "*.log", overwrite: true
 
     input:
+        // val sample from refine_sample_name_ch
         each file(demuxed) from demuxed_ch.flatten()
         file(barcodes) from refine_barcodes_ch
     
@@ -255,8 +235,6 @@ process refine {
 }
 
 process cluster {
-    // conda "bioconda::isoseq3"
-    container "quay.io/biocontainers/isoseq3:3.4.0--0"
 
     tag "Clustering"
     publishDir "${params.unpolished}", mode: "copy", pattern: "*.bam", overwrite: true
@@ -264,7 +242,7 @@ process cluster {
     publishDir "${params.logs}/unpolished", mode: "copy", pattern: "*.log", overwrite: true
 
     input:
-        // val sample from sample_name_ch
+        // val sample from cluster_sample_name_ch
         file refined_bam from refined_ch
     
     output:
@@ -373,8 +351,6 @@ process cluster {
 // }
 
 process mapping {
-    // conda "bioconda::minimap2==2.18"
-    container "quay.io/biocontainers/minimap2:2.18--h5bf99c6_0"
 
     tag "Mapping"
     publishDir "${params.mapped}", mode: "copy", pattern: "*.sam", overwrite: true
@@ -382,6 +358,7 @@ process mapping {
 
     input:
         // file hq_fasta from polished_hq_ch
+        // val sample from mapping_sample_name_ch
         file hq_fasta from gzunpolished_hq_ch
 
     output:
@@ -405,15 +382,14 @@ process mapping {
 }
 
 process sort {
-    // conda "bioconda::samtools==1.10"
-    container "quay.io/biocontainers/samtools:1.12--h9aed4be_1"
+
     tag "Sorting"
     publishDir "${params.sorted}", mode: "copy", pattern: "*.bam", overwrite: true
     publishDir "${params.sorted}", mode: "copy", pattern: "*.sam", overwrite: true
     publishDir "${params.sorted}", mode: "copy", pattern: "*.fasta", overwrite: true
 
     input:
-        // val sample from sample_name_ch
+        // val sample from sort_sample_name_ch
         tuple file(mapped_sam), file(hq_fasta) from mapped_ch
 
     output:
@@ -497,6 +473,7 @@ process sort {
 // }
 
 process collapse {
+
     tag "cDNA_Cupcake Collapse"
     publishDir "${params.collapsed}", mode: "copy", pattern: "*.gff", overwrite: true
     publishDir "${params.collapsed}", mode: "copy", pattern: "*.unfuzzy", overwrite: true
@@ -507,11 +484,8 @@ process collapse {
     publishDir "${params.collapsed}", mode: "copy", pattern: "*.sam", overwrite: true
     publishDir "${params.collapsed}", mode: "copy", pattern: "*.fasta", overwrite: true
 
-    // conda "./environments/cdna_cupcake.yml"
-    container "milescsmith/cupcake:21.2.6"
-
     input:
-        // val sample from sample_name_ch
+        // val sample from collapse_sample_name_ch
         // file filtered from filtered_ch
         tuple file(sorted_sam), file(hq_fasta) from sorted_for_collapsing_bam_ch
         // file fasta from unpolished_hq_fa_for_cupcake_ch
@@ -552,46 +526,47 @@ process rename {
 }
 
 process sqanti {
+    
     tag "SQANTI3"
-    container "milescsmith/sqanti3:1.9.3"
-    errorStrategy 'ignore' // sometimes, there's just this one file...
-    // conda "./environments/sqanti3.yml"
+    // errorStrategy 'ignore' // sometimes, there's just this one file...
 
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.pdf", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep.params.txt", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_classification.txt", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.faa", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.fasta", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.fasta.fai", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.genePred", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.gtf", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.gtf.cds.gff", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.gtf.tmp", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected.sam", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_corrected_indels.txt", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.rep_junctions.txt", overwrite: true
-    publishDir "${params.sqanti}", mode: "copy", pattern: "*.unpolished.hq.collapsed.rep.genePred", overwrite: true
+    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.params.txt", overwrite: true
+    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep.renamed.fasta", overwrite: true
+    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep_classification.txt", overwrite: true
+    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep_corrected.faa", overwrite: true
+    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep_corrected.fnn", overwrite: true
+    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep_corrected.fasta", overwrite: true
+    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep_corrected.fasta.fai", overwrite: true
+    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep_corrected.genePred", overwrite: true
+    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep_corrected.gtf", overwrite: true
+    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep_corrected.cds.gff", overwrite: true
+    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep_corrected.sam", overwrite: true
+    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep_corrected_indels.txt", overwrite: true
+    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep_junctions.txt", overwrite: true
+    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep.genePred", overwrite: true
+    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "report.pdf" , overwrite: true, saveAs: { filename -> "${sample}_${filename}" }
 
     input:
+        val sample from sqanti_sample_name_ch
         file fixed_name_fa from fixed_name_fa_ch
 
     // Until we have a next step, these just keep the parent process from completing
     output:
-        file "*.rep.params.txt" into sqanti_ch_1
+        file "*.params.txt" into sqanti_ch_1
         file "*.rep.renamed.fasta" into sqanti_ch_2
         file "*.rep_classification.txt" into sqanti_ch_3
         file "*.rep_corrected.faa" into sqanti_ch_4
-        file "*.rep_corrected.fasta" into sqanti_ch_5
-        file "*.rep_corrected.fasta.fai" into sqanti_ch_6
-        file "*.rep_corrected.genePred" into sqanti_ch_7
-        file "*.rep_corrected.gtf" into sqanti_ch_8
-        file "*.rep_corrected.gtf.cds.gff" into sqanti_ch_9
-        file "*.rep_corrected.gtf.tmp" into sqanti_ch_10
+        file "*.rep_corrected.fnn" into sqanti_ch_5
+        file "*.rep_corrected.fasta" into sqanti_ch_6
+        file "*.rep_corrected.fasta.fai" into sqanti_ch_7
+        file "*.rep_corrected.genePred" into sqanti_ch_8
+        file "*.rep_corrected.gtf" into sqanti_ch_9
+        file "*.rep_corrected.cds.gff" into sqanti_ch_10
         file "*.rep_corrected.sam" into sqanti_ch_11
         file "*.rep_corrected_indels.txt" into sqanti_ch_12
         file "*.rep_junctions.txt" into sqanti_ch_13
-        file "*.unpolished.hq.collapsed.rep.genePred" into sqanti_ch_14
-        file "*.rep_sqanti_report.pdf" into sq_report_ch
+        file "*.rep.genePred" into sqanti_ch_14
+        file "report.pdf" into sq_report_ch
 
     script:
     """
@@ -601,7 +576,8 @@ process sqanti {
         ${params.genome} \
         --cage_peak ${params.cage_peaks} \
         --polyA_motif_list ${params.polyA_list} \
-        --cpus ${task.cpus}
+        --cpus ${task.cpus} \
+        -vvv
     """
 }
 
@@ -615,15 +591,15 @@ workflow.onComplete {
 
 def nfcoreHeader() {
     // Log colors ANSI codes
-    c_reset = params.monochrome_logs ? '' : "\033[0m";
-    c_dim = params.monochrome_logs ? '' : "\033[2m";
-    c_black = params.monochrome_logs ? '' : "\033[0;30m";
-    c_green = params.monochrome_logs ? '' : "\033[0;32m";
-    c_yellow = params.monochrome_logs ? '' : "\033[0;33m";
-    c_blue = params.monochrome_logs ? '' : "\033[0;34m";
-    c_purple = params.monochrome_logs ? '' : "\033[0;35m";
-    c_cyan = params.monochrome_logs ? '' : "\033[0;36m";
-    c_white = params.monochrome_logs ? '' : "\033[0;37m";
+    c_reset  = params.monochrome_logs ? '': "\033[0m";
+    c_dim    = params.monochrome_logs ? '': "\033[2m";
+    c_black  = params.monochrome_logs ? '': "\033[0;30m";
+    c_green  = params.monochrome_logs ? '': "\033[0;32m";
+    c_yellow = params.monochrome_logs ? '': "\033[0;33m";
+    c_blue   = params.monochrome_logs ? '': "\033[0;34m";
+    c_purple = params.monochrome_logs ? '': "\033[0;35m";
+    c_cyan   = params.monochrome_logs ? '': "\033[0;36m";
+    c_white  = params.monochrome_logs ? '': "\033[0;37m";
 
     return """    -${c_dim}--------------------------------------------------${c_reset}-
                                             ${c_green},--.${c_black}/${c_green},-.${c_reset}
