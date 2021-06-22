@@ -11,6 +11,12 @@
  *
  */
 
+// TODO: convert to DSL2
+// TODO: check parameters on run to make sure they are valid
+// TODO: check all files present when starting
+// TODO: need functionality to download/build indices, grab cage_peaks and polyA lists
+// TODO: enable more options
+
 // Nextflow pipeline for processing PacBio IsoSeq runs
 // Author: Miles Smith <miles-smith@omrf.org>
 // Date: 2020/05/26
@@ -84,32 +90,26 @@ if (params.help) {
     exit 0
 }
 
-
 params.input = "${params.raw}/*.subreads.bam"
 
 Channel
-    .fromPath( params.barcodes )
-    .splitFasta( record: [id: true, sequence: true] )
-    .map{ rec -> rec.id.split("_")[0] }
-    .unique()
-    .set { sqanti_sample_name_ch }
-
-Channel
-    .fromPath( params.input , checkIfExists: true )
+    .fromPath( params.input, checkIfExists: true )
     .into{ raw_subreads_1; raw_subreads_2 }
 
 Channel
-    .fromPath( params.barcodes )
-    .into{ barcodes_ch; refine_barcodes_ch }
+    .fromPath( params.barcodes, checkIfExists: true )
+    .set{ barcodes_ch }
 
-extract_bc = { item -> 
-    item =~ /bc(\d+)\-\[FR]/
-}
+// Channel
+//     .fromPath( params.barcodes, checkIfExists: true )
+//     .set{ refine_barcodes_ch }
 
-// change most of these "bioconda::[package]" to pb.yml
 process ccs_indexing {
     tag "CCS indexing"
-    // publishDir "${params.raw}", mode: "copy", pattern : "*.bam.pbi", overwrite: false
+    // publishDir "${params.raw}",
+        // mode: "copy",
+        // pattern : "*.bam.pbi",
+        // overwrite: false
     
     input:
         file(subreads) from raw_subreads_1
@@ -124,185 +124,249 @@ process ccs_indexing {
 }
 
 process ccs_calling {
-    // Need to rewrite so as to chunk and parallelize https://github.com/PacificBiosciences/ccs#how-can-I-parallelize-on-multiple-servers
-
-    // Okay, now make chunking optional
     
     tag "CCS calling"
-    // publishDir "${params.ccs}", mode: "copy", pattern: "*.ccs.${chunk}.bam", overwrite: true
-    // publishDir "${params.logs}/ccs", mode: "copy", pattern: "*.log", overwrite: true
+    
+    publishDir "${params.logs}/ccs", mode: "copy", pattern: "*.txt", overwrite: true
+    publishDir "${params.logs}/ccs", mode: "copy", pattern: "*.json.gz", overwrite: true
 
     input:
         file(subreads) from raw_subreads_2
-        file(index) from raw_index_ch
-        each chunk from 1..params.chunks
-        val chunks from params.chunks
+        file(index)    from raw_index_ch
+        each(chunk)    from 1..params.chunks
+        val(chunks)    from params.chunks
 
     output:
-        file "*.ccs.${chunk}.bam" into ccs_chunks_ch
-        file "ccs.log" into css_log
-// need to change ccs.log to ${chunk}.ccs.log
+        file("*.bam")            into ccs_chunks_ch
+        file("*.ccs_report.txt") into ccs_log_ch
+        file("*.json.gz")        into ccs_metrics_ch
+
     script:
-        """
-        ccs \
-            --min-rq 0.9 \
-            --log-level DEBUG \
-            --log-file ccs.log \
-            --num-threads ${task.cpus} \
-            --chunk ${chunk}/${chunks} \
-            ${subreads} \
-            ${params.runid}.ccs.${chunk}.bam
-        """
+        if (params.runid != "")
+            """
+            ccs \
+                --min-rq 0.9 \
+                --log-level ${params.calling_log_level} \
+                --log-file ccs.${chunk}.log \
+                --num-threads ${task.cpus} \
+                --chunk ${chunk}/${chunks} \
+                ${subreads} \
+                ${params.runid}.ccs.${chunk}.bam
+            """
+        else
+            """
+            ccs \
+                --min-rq 0.9 \
+                --log-level ${params.calling_log_level} \
+                --log-file ccs.${chunk}.log \
+                --num-threads ${task.cpus} \
+                --chunk ${chunk}/${chunks} \
+                ${subreads} \
+                ccs.${chunk}.bam
+            """
+
 }
 
 process ccs_chunk_merging {
+
     tag "CCS chunk merging"
-    // publishDir "${params.ccs}", mode: "copy", pattern: "*.ccs.bam", overwrite: true
-    // publishDir "${params.ccs}", mode: "copy", pattern: "*.pbi", overwrite: true
 
     input:
-        file bam_chunks from ccs_chunks_ch.collect()
+        file(bam_chunks) from ccs_chunks_ch.collect()
 
     output:
-        file "*.ccs.bam" into ccs_ch
-        file "*.pbi" into index_ch //delete?
+        file("*.ccs.bam") into ccs_ch
+        file("*.pbi") into index_ch //delete?
 
     script:
-        """
-        pbmerge -o ${params.runid}.ccs.bam ${bam_chunks}
-        pbindex ${params.runid}.ccs.bam
-        """
+        if (params.runid != "")
+            """
+            pbmerge -o ${params.runid}.ccs.bam ${bam_chunks}
+            pbindex ${params.runid}.ccs.bam
+            """
+        else
+            """
+            pbmerge -o merged.ccs.bam ${bam_chunks}
+            pbindex merged.ccs.bam
+            """
 }
 
-// need to figure out how to rename the files made here
-// something in GMST does NOT like dashes in the file name
-process demux {
-    
+process demux { 
+
     tag "Demultiplexing samples"
-    publishDir "${params.demux}", mode: "copy", pattern: "*.bam", overwrite: true
-    publishDir "${params.logs}/demux", mode: "copy", pattern: "*.log", overwrite: true
+
+    publishDir path: "${params.logs}/demux", mode: "copy", pattern: "*.log", overwrite: true
     
     input:
         // val sample from demux_sample_name_ch
-        file called_ccs from ccs_ch
-        file(barcodes) from barcodes_ch
-    
+        file(called_ccs) from ccs_ch
+        file(barcodes)   from barcodes_ch
+
     output:
-        file "demuxed.*.bam" into demuxed_ch
+        file("demuxed.*.bam")  into demuxed_ch
+        file("lima.demux.log") into demuxed_log_ch
 
     script:
-        """
-        lima \
-            --isoseq \
-            --dump-clips \
-            --peek-guess \
-            --num-threads ${task.cpus} \
-            --log-level INFO \
-            --log-file lima.demux.log \
-            --split-bam \
-            ${called_ccs} \
-            ${barcodes} \
-            demuxed.bam
-        """
+        if (params.biosample != "")
+            """
+            lima \
+                --isoseq \
+                --peek-guess \
+                --num-threads ${task.cpus} \
+                --log-level ${params.demux_log_level} \
+                --log-file lima.demux.log \
+                --split-bam-named \
+                --biosample-csv ${params.biosample} \
+                ${called_ccs} \
+                ${barcodes} \
+                demuxed.bam
+            """
+        else
+            """
+            lima \
+                --isoseq \
+                --peek-guess \
+                --num-threads ${task.cpus} \
+                --log-level ${params.demux_log_level} \
+                --log-file lima.demux.log \
+                --split-bam \
+                --split-bam-named \
+                ${called_ccs} \
+                ${barcodes} \
+                demuxed.bam
+            """
+
 }
 
-process refine {
 
+process refine {
+    
     tag "Refining"
-    publishDir "${params.refined}", mode: "copy", pattern: "*.flnc.bam", overwrite: true
-    publishDir "${params.logs}/refine", mode: "copy", pattern: "*.log", overwrite: true
+
+    publishDir path: "${params.refined}/${sample_name}", mode: "copy", pattern: "*.bam", overwrite: true, saveAs: { filename -> "demuxed.flnc.bam" }
+    publishDir path: "${params.refined}/${sample_name}", mode: "copy", pattern: "*.bam.pbi", overwrite: true, saveAs: { filename -> "demuxed.flnc.bam.pbi" }
+    publishDir path: "${params.refined}/${sample_name}", mode: "copy", pattern: "*.xml", overwrite: true, saveAs: { filename -> "demuxed.flnc.consensusreadset.xml" }
+    publishDir path: "${params.refined}/${sample_name}", mode: "copy", pattern: "*.json", overwrite: true, saveAs: { filename -> "demuxed.flnc.filter_summary.json" }
+    publishDir path: "${params.refined}/${sample_name}", mode: "copy", pattern: "*.csv", overwrite: true, saveAs: { filename -> "demuxed.post_refine_report.csv" }
+    publishDir path: "${params.logs}/refine", mode: "copy", pattern: "*.log", overwrite: true
 
     input:
-        // val sample from refine_sample_name_ch
-        each file(demuxed) from demuxed_ch.flatten()
-        file(barcodes) from refine_barcodes_ch
+        file(demuxed) from demuxed_ch.flatten()
+        // file(barcodes) from refine_barcodes_ch
     
     output:
-        file "*.flnc.bam" into refined_ch
+        tuple val(sample_name), file("*.bam") into refined_ch
+        file("*.csv") into refined_report_ch
+        file("*.log") into refined_log_ch
+        file("*.xml") into refined_consensusreadset_ch
+        file("*.pbi") into refined_index_ch
+        file("*.json") into refined_filter_ch
 
     script:
-    """
-    isoseq3 \
-        refine \
-        --num-threads ${task.cpus} \
-        --log-file ${demuxed.baseName}.log \
-        --log-level INFO \
-        --verbose \
-        ${demuxed} \
-        ${barcodes} \
-        ${demuxed.baseName}.flnc.bam
-    """
+        sample_name = (demuxed.baseName =~ /demuxed\.([\s\S]*)_5p--[\s\S]*_3p/)[0][1]
+        """
+        isoseq3 \
+            refine \
+            --num-threads ${task.cpus} \
+            --log-file refining.${sample_name}.log \
+            --log-level ${params.refining_log_level} \
+            --verbose \
+            ${demuxed} \
+            ${params.barcodes} \
+            demuxed.refined.${sample_name}.flnc.bam
+        """
 }
 
 process cluster {
 
     tag "Clustering"
-    publishDir "${params.unpolished}", mode: "copy", pattern: "*.bam", overwrite: true
-    publishDir "${params.unpolished}", mode: "copy", pattern: "*.fasta.gz", overwrite: true
-    publishDir "${params.logs}/unpolished", mode: "copy", pattern: "*.log", overwrite: true
+
+    publishDir path: "${params.unpolished}/${sample_name}", mode: "copy", pattern: "*.hq.bam", overwrite: true, saveAs: { filename -> "flnc.unpolished.hq.bam" }
+    publishDir path: "${params.unpolished}/${sample_name}", mode: "copy", pattern: "*.lq.bam", overwrite: true, saveAs: { filename -> "flnc.unpolished.lq.bam" }
+    publishDir path: "${params.unpolished}/${sample_name}", mode: "copy", pattern: "*.fasta.gz", overwrite: true, saveAs: { filename -> "flnc.unpolished.fasta.gz" }
+    publishDir path: "${params.unpolished}/${sample_name}", mode: "copy", pattern: "*.csv", overwrite: true, saveAs: { filename -> "flnc.unpolished.cluster_report.csv" }
+    publishDir path: "${params.unpolished}/${sample_name}", mode: "copy", pattern: "*.cluster", overwrite: true, saveAs: { filename -> "flnc.unpolished.cluster" }
+    publishDir path: "${params.logs}/unpolished", mode: "copy", pattern: "*.log", overwrite: true, saveAs: { filename -> "clustering.${sample_name}.log" }
 
     input:
-        // val sample from cluster_sample_name_ch
-        file refined_bam from refined_ch
+        tuple val(sample_name), file(refined_bam) from refined_ch
     
     output:
-        file "*.unpolished.bam" into unpolished_bam_ch
-        file "*.hq.fasta.gz" into gzunpolished_hq_ch
-        file "*.lq.fasta.gz" into gzunpolished_lq_ch
+        tuple val(sample_name), file("*.unpolished.bam") into unpolished_bam_ch
+        file("*.hq.fasta.gz") into gzunpolished_hq_ch
+        file("*.lq.fasta.gz") into gzunpolished_lq_ch
+        file("*.csv") into cluster_report_ch
+        file("*.cluster") into clusters_ch
+        file("*.log") into cluster_log_ch
 
 
     script:
-    """
-    isoseq3 \
-        cluster \
-        --use-qvs \
-        --num-threads ${task.cpus} \
-        --log-file ${refined_bam.baseName}.log \
-        --log-level INFO \
-        --verbose \
-        ${refined_bam} \
-        ${refined_bam}.unpolished.bam
-    """
+        """
+        isoseq3 \
+            cluster \
+            --use-qvs \
+            --num-threads ${task.cpus} \
+            --log-file ${refined_bam.baseName}.log \
+            --log-level ${params.cluster_log_level} \
+            --verbose \
+            ${refined_bam} \
+            ${refined_bam}.unpolished.bam
+        """
+
 }
 
 // Since this takes forever, need to make it optional or find a way to speed it up
-// process polish {
-//     // conda "bioconda::isoseq3"
-//     container "quay.io/biocontainers/isoseq3:3.4.0--0"
-
-//     tag "Polishing"
-//     publishDir "${params.polished}", mode: "copy", pattern: "*.bam", overwrite: true
-//     publishDir "${params.polished}", mode: "copy", pattern: "*.fasta.gz", overwrite: true
-//     publishDir "${params.logs}/polished", mode: "copy", pattern: "*.log", overwrite: true
-
-//     input:
-//         // val sample from sample_name_ch
-//         file unpolished_bam from unpolished_bam_ch
+process polish {
     
-//     output:
-//         file "*.polished.bam" into polished_bam_ch
-//         file "*.hq.fasta.gz" into polished_hq_ch
-//         file "*.lq.fasta.gz" into polished_lq_ch
+    tag "Polishing"
 
-//     script:
-//     """
-//     isoseq3 \
-//         polish \
-//         --num-threads ${task.cpus} \
-//         --log-file ${unpolished_bam.baseName}.log \
-//         --log-level INFO \
-//         --verbose \
-//         ${unpolished_bam} \
-//         ${unpolished_bam.baseName}.polished.bam
-//     """
-// }
+    publishDir path: "${params.polished}/${sample_name}", mode: "copy", pattern: "*.bam", overwrite: true, saveAs: { filename -> "demuxed.polished.bam"}
+    publishDir path: "${params.polished}/${sample_name}", mode: "copy", pattern: "*.hq.fasta.gz", overwrite: true, saveAs: {filename -> "demuxed.hq.fasta.gz"}
+    publishDir path: "${params.polished}/${sample_name}", mode: "copy", pattern: "*.lq.fasta.gz", overwrite: true, saveAs: {filename -> "demuxed.lq.fasta.gz"}
+    publishDir path: "${params.logs}/polished", mode: "copy", pattern: "*.log", overwrite: true, saveAs: { filename -> "polish.${sample_name}.log" }
+
+    input:
+        tuple val(sample_name), file(unpolished_bam) from unpolished_bam_ch
+        file(hq_fasta) from gzunpolished_hq_ch
+        file(lq_fasta) from gzunpolished_lq_ch
+    
+    output:
+        tuple val(sample_name), file("*.polished.bam") into polished_bam_ch
+        tuple val(sample_name), file("*.hq.fasta.gz") into polished_hq_ch
+        file("*.lq.fasta.gz") into polished_lq_ch
+        file("*.log")         into polished_log_ch
+
+    script:
+        if (params.polish)
+            """
+            isoseq3 \
+                polish \
+                --num-threads ${task.cpus} \
+                --log-file ${unpolished_bam.baseName}.log \
+                --log-level ${params.polish_log_level} \
+                --verbose \
+                ${unpolished_bam} \
+                ${unpolished_bam.baseName}.polished.bam
+            """
+        else
+            """
+            mv ${unpolished_bam} demuxed.polished.bam
+            mv ${hq_fasta} demuxed.hq.fasta.gz
+            mv ${lq_fasta} demuxed.lq.fasta.gz
+            touch ${unpolished_bam.baseName}.log
+            """
+
+}
 
 // process decompress {
 //     conda "bioconda::samtools==1.10"
 //     // container "quay.io/biocontainers/samtools:1.10--h9402c20_2"
 
 //     tag "Decompressing"
-//     //publishDir "${params.transcompressed}", mode: "copy", pattern: "*.fasta.gz", overwrite: true
+//     //publishDir "${params.transcompressed}",
+        // mode: "copy",
+        // pattern: "*.fasta.gz",
+        // overwrite: true
 
 //     input:
 //         // val sample from sample_name_ch
@@ -324,8 +388,14 @@ process cluster {
 //     // container "quay.io/biocontainers/gmap:2020.06.01--pl526h2f06484_1"
 
 //     tag "Mapping"
-//     //publishDir "${params.mapped}", mode: "copy", pattern: "*.sam", overwrite: true
-//     publishDir "${params.logs}/mapped", mode: "copy", pattern: "*.log", overwrite: true
+//     //publishDir "${params.mapped}",
+        // mode: "copy",
+        // pattern: "*.sam",
+        // overwrite: true
+//     publishDir "${params.logs}/mapped",
+        // mode: "copy",
+        // pattern: "*.log",
+        // overwrite: true
 
 //     input:
 //         file hq_fasta from unpolished_hq_fa_ch
@@ -353,47 +423,48 @@ process cluster {
 process mapping {
 
     tag "Mapping"
-    publishDir "${params.mapped}", mode: "copy", pattern: "*.sam", overwrite: true
-    publishDir "${params.logs}/mapped", mode: "copy", pattern: "*.log", overwrite: true
+
+    publishDir path: "${params.mapped}/${sample_name}", mode: "copy", pattern: "*.sam", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped.sam" : "hq_unpolished_mapped.sam" }
+    publishDir path: "${params.logs}/mapped", mode: "copy", pattern: "*.log", overwrite: true, saveAs: { filename -> "mapping.${sample_name}.log" }
 
     input:
-        // file hq_fasta from polished_hq_ch
-        // val sample from mapping_sample_name_ch
-        file hq_fasta from gzunpolished_hq_ch
+        tuple val(sample_name), file(polished_hq_fasta) from polished_hq_ch
 
     output:
-        tuple file("*.mapped.sam"), file(hq_fasta) into mapped_ch
+        tuple val(sample_name), file("*.mapped.sam"), file(polished_hq_fasta) into mapped_ch
+        file("*.mapped.log") into mapped_log_ch
 
     script:
-    """
-    minimap2 \
-        -H \
-        -t ${task.cpus} \
-        -ax splice:hq \
-        -uf \
-        --secondary=no \
-        -O6,24 \
-        -B4 \
-        ${params.minimap_index} \
-        ${hq_fasta} \
-        > ${hq_fasta.baseName}.mapped.sam \
-        2> ${hq_fasta.baseName}.mapped.log
-    """
+        """
+        minimap2 \
+            -H \
+            -t ${task.cpus} \
+            -ax splice:hq \
+            -uf \
+            --secondary=no \
+            -O6,24 \
+            -B4 \
+            ${params.minimap_index} \
+            ${polished_hq_fasta} \
+            > ${polished_hq_fasta.baseName}.mapped.sam \
+            2> ${polished_hq_fasta.baseName}.mapped.log
+        """
 }
 
 process sort {
 
     tag "Sorting"
-    publishDir "${params.sorted}", mode: "copy", pattern: "*.bam", overwrite: true
-    publishDir "${params.sorted}", mode: "copy", pattern: "*.sam", overwrite: true
-    publishDir "${params.sorted}", mode: "copy", pattern: "*.fasta", overwrite: true
+
+    publishDir path: "${params.sorted}/${sample_name}", mode: "copy", pattern: "*.bam", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted.bam" : "hq_unpolished_mapped_sorted.bam" }
+    // publishDir path: "${params.sorted}/${sample_name}", mode: "copy", pattern: "*.sam", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted.${filename.Extension}" : "hq_unpolished_mapped_sorted.${filename.Extension}" }
+    publishDir path: "${params.sorted}/${sample_name}", mode: "copy", pattern: "*.fasta", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted.fasta" : "hq_unpolished_mapped_sorted.fasta}" }
 
     input:
         // val sample from sort_sample_name_ch
-        tuple file(mapped_sam), file(hq_fasta) from mapped_ch
+        tuple val(sample_name), file(mapped_sam), file(hq_fasta) from mapped_ch
 
     output:
-        tuple file("*.sorted.sam"), file(hq_fasta) into sorted_for_collapsing_bam_ch, sorting_ch //sorted_filtering_bam_ch
+        tuple val(sample_name), file("*.sorted.sam"), file(hq_fasta) into sorted_for_collapsing_bam_ch, sorting_ch //sorted_filtering_bam_ch
     
     script:
     """
@@ -403,6 +474,7 @@ process sort {
         ${mapped_sam} \
         -o ${mapped_sam.baseName}.sorted.sam
     """
+
 }
 
 // process index_sorted {
@@ -429,7 +501,10 @@ process sort {
 
 // process filter {
 //     tag "Filtering"
-//     //publishDir "${params.filtered}", mode: "copy", pattern: "*.bam", overwrite: true
+//     //publishDir "${params.filtered}",
+        // mode: "copy",
+        // pattern: "*.bam",
+        // overwrite: true
     
 //     conda "./environments/filter_sam.yml"
 //     // container "registry.gitlab.com/milothepsychic/filter_sam"
@@ -457,7 +532,10 @@ process sort {
 //     // container "quay.io/biocontainers/samtools:1.10--h9402c20_2"
 
 //     tag "Compressing"
-//     //publishDir "${params.transcompressed}", mode: "copy", pattern: "*.fasta.gz", overwrite: true
+//     //publishDir "${params.transcompressed}",
+        // mode: "copy",
+        // pattern: "*.fasta.gz",
+        // overwrite: true
 
 //     input:
 //         // val sample from sample_name_ch
@@ -475,26 +553,26 @@ process sort {
 process collapse {
 
     tag "cDNA_Cupcake Collapse"
-    publishDir "${params.collapsed}", mode: "copy", pattern: "*.gff", overwrite: true
-    publishDir "${params.collapsed}", mode: "copy", pattern: "*.unfuzzy", overwrite: true
-    publishDir "${params.collapsed}", mode: "copy", pattern: "*.group.txt", overwrite: true
-    publishDir "${params.collapsed}", mode: "copy", pattern: "*.group.txt.unfuzzy", overwrite: true
-    publishDir "${params.collapsed}", mode: "copy", pattern: "*.rep.fa", overwrite: true
-    publishDir "${params.collapsed}", mode: "copy", pattern: "*.ignored_ids.txt", overwrite: true
-    publishDir "${params.collapsed}", mode: "copy", pattern: "*.sam", overwrite: true
-    publishDir "${params.collapsed}", mode: "copy", pattern: "*.fasta", overwrite: true
+    publishDir path: "${params.collapsed}/${sample_name}", mode: "copy", pattern: "*.gff", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted_collapsed.gff" : "hq_unpolished_mapped_sorted_collapsed.gff" }
+    publishDir path: "${params.collapsed}/${sample_name}", mode: "copy", pattern: "*.unfuzzy", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted_collapsed.unfuzzy" : "hq_unpolished_mapped_sorted_collapsed.unfuzzy" }
+    publishDir path: "${params.collapsed}/${sample_name}", mode: "copy", pattern: "*.group.txt", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted_collapsed.group.txt" : "hq_unpolished_mapped_sorted_collapsed.group.txt" }
+    publishDir path: "${params.collapsed}/${sample_name}", mode: "copy", pattern: "*.group.txt.unfuzzy", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted_collapsed.group.txt.unfuzzy" : "hq_unpolished_mapped_sorted_collapsed.group.txt.unfuzzy" }
+    publishDir path: "${params.collapsed}/${sample_name}", mode: "copy", pattern: "*.rep.fa", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted_collapsed.rep.fa" : "hq_unpolished_mapped_sorted_collapsed.rep.fa" }
+    publishDir path: "${params.collapsed}/${sample_name}", mode: "copy", pattern: "*.ignored_ids.txt", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted_collapsed.ignored_ids.txt" : "hq_unpolished_mapped_sorted_collapsed.ignored_ids.txt" }
 
     input:
-        // val sample from collapse_sample_name_ch
+        tuple val(sample_name), file(sorted_sam), file(hq_fasta) from sorted_for_collapsing_bam_ch
         // file filtered from filtered_ch
-        tuple file(sorted_sam), file(hq_fasta) from sorted_for_collapsing_bam_ch
         // file fasta from unpolished_hq_fa_for_cupcake_ch
 
     // Until we have a next step, these just keep the parent process from completing
     output:
-        file "*.collapsed.gff" into collapsed_gff_ch
-        // file "*.collapsed.gff.unfuzzy" into collapsed_unfuzzy_gff_ch
-        file "*.collapsed.rep.fa" into collapsed_fa_ch
+        file("*.collapsed.gff")     into collapsed_gff_ch
+        tuple val(sample_name), file("*.collapsed.rep.fa")  into collapsed_fa_ch
+        file("*.unfuzzy")           into collapsed_unfuzzy_ch
+        tuple val(sample_name), file("*.group.txt")         into collapsed_group_ch
+        file("*.group.txt.unfuzzy") into collapsed_group_unfuzzy_ch
+        file("*.ignored_ids.txt")   into collapsed_ignored_ids_ch
     
     script:
     """
@@ -506,49 +584,30 @@ process collapse {
     """
 }
 
-// GeneMark S-T which is still foundational to pygmst - seems
-// to have a problem with either double dashes
-// or long file names.  So we are going to rename everything
-process rename {
-    tag "name fix GeneMark"
-    container "milescsmith/rename:0.20-7"
-    
-    input:
-        file collapsed_fa from collapsed_fa_ch
-
-    output:
-        file "*.fa" into fixed_name_fa_ch
-
-    script:
-    """
-    rename 's/_5p\\-\\-bc[0-9]{4}_3p//' ${collapsed_fa} | rename 's/^demuxed\\.//'
-    """
-}
 
 process sqanti {
     
     tag "SQANTI3"
     // errorStrategy 'ignore' // sometimes, there's just this one file...
 
-    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.params.txt", overwrite: true
-    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep.renamed.fasta", overwrite: true
-    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep_classification.txt", overwrite: true
-    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep_corrected.faa", overwrite: true
-    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep_corrected.fnn", overwrite: true
-    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep_corrected.fasta", overwrite: true
-    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep_corrected.fasta.fai", overwrite: true
-    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep_corrected.genePred", overwrite: true
-    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep_corrected.gtf", overwrite: true
-    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep_corrected.cds.gff", overwrite: true
-    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep_corrected.sam", overwrite: true
-    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep_corrected_indels.txt", overwrite: true
-    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep_junctions.txt", overwrite: true
-    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "*.rep.genePred", overwrite: true
-    publishDir "${params.sqanti}/${sample}", mode: "copy", pattern:  "report.pdf" , overwrite: true, saveAs: { filename -> "${sample}_${filename}" }
+    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.params.txt", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted_collapsed_rep.params.txt": "hq_unpolished_mapped_sorted_collapsed_rep.params.txt" }
+    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep.renamed.fasta", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted_collapsed_rep_renamed.fasta": "hq_unpolished_mapped_sorted_collapsed_rep_renamed.fasta" }
+    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep_classification.txt", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted_collapsed_rep_classification.txt": "hq_unpolished_mapped_sorted_collapsed_rep_classification.txt" }
+    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep_corrected.faa", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted_collapsed_rep_corrected.faa": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.faa" }
+    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep_corrected.fnn", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted_collapsed_rep_corrected.fnn": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.fnn" }
+    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep_corrected.fasta", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted_collapsed_rep_corrected.fasta": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.fasta" }
+    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep_corrected.fasta.fai", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted_collapsed_rep_corrected.fasta.fai": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.fasta.fai" }
+    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep_corrected.genePred", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted_collapsed_rep_corrected.genePred": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.genePred" }
+    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep_corrected.gtf", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted_collapsed_rep_corrected.gtf": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.gtf" }
+    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep_corrected.cds.gff", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted_collapsed_rep_corrected.cds.gff": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.cds.gff" }
+    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep_corrected.sam", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted_collapsed_rep_corrected.sam": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.sam" }
+    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep_corrected_indels.txt", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted_collapsed_rep_corrected_indels.txt": "hq_unpolished_mapped_sorted_collapsed_rep_corrected_indels.txt" }
+    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep_junctions.txt", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted_collapsed_rep_junctions.txt": "hq_unpolished_mapped_sorted_collapsed_rep_junctions.txt" }
+    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep.genePred", overwrite: true, saveAs: { filename -> params.polished ? "hq_polished_mapped_sorted_collapsed_rep.genePred": "hq_unpolished_mapped_sorted_collapsed_rep.genePred" }
+    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "report.pdf", overwrite: true
 
     input:
-        val sample from sqanti_sample_name_ch
-        file fixed_name_fa from fixed_name_fa_ch
+        tuple val(sample_name), file(fixed_name_fa) from collapsed_fa_ch
 
     // Until we have a next step, these just keep the parent process from completing
     output:
