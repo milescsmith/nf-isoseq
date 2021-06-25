@@ -3,9 +3,18 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## 1.1.0 - [2021/06/25]
+
+### Changed
+
+* Replaced minimap2 with pbmm2 for alignment (same core, but pbmm2 has presets for isoseq and can take BAM files)
+* Expanded the number of post-processing cDNA_Cupcake scripts used (filtering, abundance)
+* Added back IsoAnnotLite processing
+* Expanded the number of outputs
+
 ## 1.0.0 - [2021/06/22]
 
-### `Changed
+### Changed
 
 * All containers updated to newest versions
 * Data now saved based on barcode name
