@@ -3,6 +3,20 @@
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## 1.2.0 - [2021/07/01]
+
+### Changed
+
+* Script now ensures that channels from multiple processess coming into one process are synchronized
+* Switched back to minimap2 as pbmm2 does not add an `NM` tag indicating alignment quality, which is needed by cDNA_Cupcake
+* Update version of cDNA_Cupcake container used
+### Fixed
+
+* Proper naming of files based on their polished state
+* Improved handling of not polishing prior to mapping
+* Squashed a bug in tag for `filter_degraded` process
+
+
 ## 1.1.0 - [2021/06/25]
 
 ### Changed
