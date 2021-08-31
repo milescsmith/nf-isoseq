@@ -560,8 +560,9 @@ process abundance {
 
     tag "Post-collapse abundance"
 
-    publishDir path: "${params.collapsed}/${sample_name}", mode: "copy", pattern: "*.txt", overwrite: true
-    
+    publishDir path: "${params.collapsed}/${sample_name}", mode: "copy", pattern: "*abundance.txt", overwrite: true, { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed.abundance.txt" : "hq_unpolished_mapped_sorted_collapsed.abundance.txt" }
+    publishDir path: "${params.collapsed}/${sample_name}", mode: "copy", pattern: "*read_stat.txt", overwrite: true, { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed.read_stat.txt" : "hq_unpolished_mapped_sorted_collapsed.read_stat.txt" }
+
     input:
         tuple val(sample_name), file(group_file), file(cluster_report) from collapsed_group_ch.join(clustered_report_ch)
 
@@ -603,42 +604,44 @@ process sqanti {
     tag "SQANTI3"
     // errorStrategy 'ignore' // sometimes, there's just this one file...
 
-    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.params.txt", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep.params.txt": "hq_unpolished_mapped_sorted_collapsed_rep.params.txt" }
-    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep.renamed.fasta", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_renamed.fasta": "hq_unpolished_mapped_sorted_collapsed_rep_renamed.fasta" }
-    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep_classification.txt", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_classification.txt": "hq_unpolished_mapped_sorted_collapsed_rep_classification.txt" }
-    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep_corrected.faa", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_corrected.faa": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.faa" }
-    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep_corrected.fnn", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_corrected.fnn": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.fnn" }
-    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep_corrected.fasta", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_corrected.fasta": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.fasta" }
-    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep_corrected.fasta.fai", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_corrected.fasta.fai": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.fasta.fai" }
-    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep_corrected.genePred", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_corrected.genePred": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.genePred" }
-    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep_corrected.gtf", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_corrected.gtf": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.gtf" }
-    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep_corrected.cds.gff", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_corrected.cds.gff": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.cds.gff" }
-    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep_corrected.sam", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_corrected.sam": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.sam" }
-    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep_corrected_indels.txt", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_corrected_indels.txt": "hq_unpolished_mapped_sorted_collapsed_rep_corrected_indels.txt" }
-    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep_junctions.txt", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_junctions.txt": "hq_unpolished_mapped_sorted_collapsed_rep_junctions.txt" }
-    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "*.rep.genePred", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep.genePred": "hq_unpolished_mapped_sorted_collapsed_rep.genePred" }
-    publishDir path: "${params.sqanti}/${sample_name}", mode: "copy", pattern: "report.pdf", overwrite: true
+    publishDir path: "${params.sqanti}/${sample_name}",                  mode: "copy", pattern: "*.params.txt", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep.params.txt": "hq_unpolished_mapped_sorted_collapsed_rep.params.txt" }
+    publishDir path: "${params.sqanti}/${sample_name}",                  mode: "copy", pattern: "*.rep.renamed.fasta", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_renamed.fasta": "hq_unpolished_mapped_sorted_collapsed_rep_renamed.fasta" }
+    publishDir path: "${params.sqanti}/${sample_name}",                  mode: "copy", pattern: "*.rep_classification.txt", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_classification.txt": "hq_unpolished_mapped_sorted_collapsed_rep_classification.txt" }
+    publishDir path: "${params.sqanti}/${sample_name}",                  mode: "copy", pattern: "*.rep_corrected.faa", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_corrected.faa": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.faa" }
+    publishDir path: "${params.sqanti}/${sample_name}",                  mode: "copy", pattern: "*.rep_corrected.fnn", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_corrected.fnn": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.fnn" }
+    publishDir path: "${params.sqanti}/${sample_name}",                  mode: "copy", pattern: "*.rep_corrected.fasta", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_corrected.fasta": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.fasta" }
+    publishDir path: "${params.sqanti}/${sample_name}",                  mode: "copy", pattern: "*.rep_corrected.fasta.fai", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_corrected.fasta.fai": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.fasta.fai" }
+    publishDir path: "${params.sqanti}/${sample_name}",                  mode: "copy", pattern: "*.rep_corrected.genePred", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_corrected.genePred": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.genePred" }
+    publishDir path: "${params.sqanti}/${sample_name}",                  mode: "copy", pattern: "*.rep_corrected.gtf", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_corrected.gtf": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.gtf" }
+    publishDir path: "${params.sqanti}/${sample_name}",                  mode: "copy", pattern: "*.rep_corrected.cds.gff", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_corrected.cds.gff": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.cds.gff" }
+    publishDir path: "${params.sqanti}/${sample_name}",                  mode: "copy", pattern: "*.rep_corrected.sam", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_corrected.sam": "hq_unpolished_mapped_sorted_collapsed_rep_corrected.sam" }
+    publishDir path: "${params.sqanti}/${sample_name}",                  mode: "copy", pattern: "*.rep_corrected_indels.txt", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_corrected_indels.txt": "hq_unpolished_mapped_sorted_collapsed_rep_corrected_indels.txt" }
+    publishDir path: "${params.sqanti}/${sample_name}",                  mode: "copy", pattern: "*.rep_junctions.txt", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep_junctions.txt": "hq_unpolished_mapped_sorted_collapsed_rep_junctions.txt" }
+    publishDir path: "${params.sqanti}/${sample_name}",                  mode: "copy", pattern: "*.rep.genePred", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep.genePred": "hq_unpolished_mapped_sorted_collapsed_rep.genePred" }
+    publishDir path: "${params.sqanti}/${sample_name}/report_plot_data", mode: "copy", pattern: "*.csv", overwrite: true
+    publishDir path: "${params.sqanti}/${sample_name}",                  mode: "copy", pattern: "report.pdf", overwrite: true
 
     input:
         tuple val(sample_name), file(fixed_name_fa) from filtered_seq_ch
 
     // Until we have a next step, these just keep the parent process from completing
     output:
-        file("*.params.txt")               into sqanti_ch_1
-        file("*.rep.renamed.fasta")        into sqanti_ch_2
+        file("*.params.txt")                                     into sqanti_ch_1
+        file("*.rep.renamed.fasta")                              into sqanti_ch_2
         tuple val(sample_name), file("*.rep_classification.txt") into sqanti_classification_ch
-        file("*.rep_corrected.faa")        into sqanti_ch_4
-        file("*.rep_corrected.fnn")        into sqanti_ch_5
-        file("*.rep_corrected.fasta")      into sqanti_ch_6
-        file("*.rep_corrected.fasta.fai")  into sqanti_ch_7
-        file("*.rep_corrected.genePred")   into sqanti_ch_8
-        file("*.rep_corrected.gtf")        into sqanti_corrected_annotation_ch
-        file("*.rep_corrected.cds.gff")    into sqanti_ch_10
-        file("*.rep_corrected.sam")        into sqanti_ch_11
-        file("*.rep_corrected_indels.txt") into sqanti_ch_12
-        file("*.rep_junctions.txt")        into sqanti_junctions_ch
-        file("*.rep.genePred")             into sqanti_ch_14
-        file("report.pdf") into sq_report_ch
+        file("*.rep_corrected.faa")                              into sqanti_ch_4
+        file("*.rep_corrected.fnn")                              into sqanti_ch_5
+        file("*.rep_corrected.fasta")                            into sqanti_ch_6
+        file("*.rep_corrected.fasta.fai")                        into sqanti_ch_7
+        file("*.rep_corrected.genePred")                         into sqanti_ch_8
+        file("*.rep_corrected.gtf")                              into sqanti_corrected_annotation_ch
+        file("*.rep_corrected.cds.gff")                          into sqanti_ch_10
+        file("*.rep_corrected.sam")                              into sqanti_ch_11
+        file("*.rep_corrected_indels.txt")                       into sqanti_ch_12
+        file("*.rep_junctions.txt")                              into sqanti_junctions_ch
+        file("*.rep.genePred")                                   into sqanti_ch_14
+        file("*.csv")                                            into sqanti_plot_data_ch
+        file("report.pdf")                                       into sq_report_ch
 
     script:
       """
@@ -655,26 +658,26 @@ process sqanti {
 }
 
 
-process isoannot {
+// process isoannot {
 
-    tag "annotation"
+//     tag "annotation"
 
-    publishDir path: "${params.isoannot}/${sample_name}", mode: "copy", pattern: "*.gtf", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep.isoannot.gtf": "hq_unpolished_mapped_sorted_collapsed_rep.isoannot.gtf" }
+//     publishDir path: "${params.isoannot}/${sample_name}", mode: "copy", pattern: "*.gtf", overwrite: true, saveAs: { filename -> params.polish ? "hq_polished_mapped_sorted_collapsed_rep.isoannot.gtf": "hq_unpolished_mapped_sorted_collapsed_rep.isoannot.gtf" }
 
-    input:
-        file(corrected_annotation) from sqanti_corrected_annotation_ch
-        tuple val(sample_name), file(classification) from sqanti_classification_ch
-        file(junctions) from sqanti_junctions_ch
+//     input:
+//         file(corrected_annotation) from sqanti_corrected_annotation_ch
+//         tuple val(sample_name), file(classification) from sqanti_classification_ch
+//         file(junctions) from sqanti_junctions_ch
 
-    output:
-        file("*.gtf") into isoannot_annotation_ch
+//     output:
+//         file("*.gtf") into isoannot_annotation_ch
 
-    script:
-        """
-        IsoAnnotLite ${corrected_annotation} ${classification} ${junctions} --gff3 ${params.tappas_annotation} --output ${sample_name}.gtf
-        """
+//     script:
+//         """
+//         IsoAnnotLite ${corrected_annotation} ${classification} ${junctions} --gff3 ${params.tappas_annotation} --output ${sample_name}.gtf
+//         """
 
-}
+// }
 
 
 workflow.onError {
