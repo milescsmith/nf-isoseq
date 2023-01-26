@@ -83,12 +83,17 @@ if (params.help) {
     exit 0
 }
 
-params.input = "${params.flncs}/flnc-*.bam"
+params.input = "${params.demux}/flnc-*.bam"
 
 Channel
     .fromPath( params.input, checkIfExists: true )
-    .into{ flncs_ch }
+    .set{ flncs_ch }
 
+Channel
+    .fromPath( params.input, checkIfExists: true )
+    .map{ println("$it") }
+    // .map{ ((it =~ /flnc-(\d+).bam/)[0][1]) }
+    // .into{ sample_name_ch }
 
 process mapping {
 
@@ -99,13 +104,16 @@ process mapping {
 
     input:
         file(input_reads) from flncs_ch
+        // value(sample_name) from sample_name_ch
+
 
     output:
-        tuple val(sample_name), file("*.sam"), file("*.hq.fasta.gz") into mapped_ch
-        file("*.alignment.log")                                      into mapped_log_ch
+        // tuple val(sample_name), file("*.sam"), file("*.hq.fasta.gz") into mapped_ch
+        tuple val(sample_name), file("*.mapped.sam") into mapped_ch
+        file("*.alignment.log")               into mapped_log_ch
 
     script:
-        sample_name = (input_reads.baseName =~ /flnc\-([\d]*)/)[0][1]
+        sample_name = (input_reads.baseName =~ /flnc-([\d]+)/)[0][1]
         """
         minimap2 \
             -H \
